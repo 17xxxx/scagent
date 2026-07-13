@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  # 主容器：AI Agent 开发环境
+  agent:
+    build: 
+      context: ..
+      dockerfile: agent_core/Dockerfile
+    volumes:
+      # 将整个项目目录挂载到容器内的 /workspace
+      - ..:/workspace:cached
+    # 保持容器存活，等待 VS Code 连入
+    command: sleep infinity
+    depends_on:
+      - seurat
+
+  # 副容器：R 生信后端
+  seurat:
+    build: 
+      context: ..
+      dockerfile: seurat_backend/Dockerfile
+    ports:
+      - "9000:9000"
+    volumes:
+      - ..:/workspace:cached
+    # 启动 Plumber API
+    command: Rscript -e "pr <- plumber::pr('/workspace/seurat_backend/api.R'); plumber::pr_run(pr, host='0.0.0.0', port=9000)"
