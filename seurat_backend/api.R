@@ -1,15 +1,15 @@
-library(plumber)
+# library(plumber)
 
-#* @get /ping
-function() {
-  return(list(message = "R backend is alive!"))
-}
+# #* @get /ping
+# function() {
+#   return(list(message = "R backend is alive!"))
+# }
 
-#* @get /read_test
-function() {
-  content <- readLines("/workspace/shared_data/test.txt")
-  return(list(file_content = content))
-}
+# #* @get /read_test
+# function() {
+#   content <- readLines("/workspace/shared_data/test.txt")
+#   return(list(file_content = content))
+# }
 
 
 
@@ -17,8 +17,8 @@ function() {
 library(plumber)
 
 # 预先加载所有工具脚本
-source("/workspace/seurat_backend/scripts/01_qc.R")
-# source("/workspace/seurat_backend/scripts/02_pca.R") # 未来扩展的脚本
+source("/workspace/seurat_backend/01_qc.R")
+# source("/workspace/seurat_backend/02_norm_hvg_scale.R") # 未来扩展的脚本
 
 #* 通用分发网关
 #* @post /api/execute_task
@@ -27,7 +27,7 @@ function(req) {
   body <- req$body
   
   tool_name <- body$tool_name
-  tool_params <- body$params      # 这就是你的“未知参数 JSON 对象”
+  tool_params <- body$params      # 这就是你的"未知参数 JSON 对象"
   
   # 2. 根据工具名，映射到对应的 R 函数字串
   # 未来每增加一个新工具，只需要在这个映射表里加一行即可
@@ -51,4 +51,20 @@ function(req) {
   }, error = function(e) {
     return(list(status = "error", message = paste("执行出错:", e$message)))
   })
+}
+
+#* 运行 run_test.R 自检脚本
+#* @get /api/run_test
+function() {
+  tryCatch({
+    invisible(capture.output(source("/workspace/seurat_backend/run_test.R")))
+    return(list(status = "success", message = "run_test 全部通过"))
+  }, error = function(e) {
+    return(list(status = "error", message = paste("run_test 失败:", e$message)))
+  })
+}
+
+#* @plumber
+function(pr) {
+  pr
 }

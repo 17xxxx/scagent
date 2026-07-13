@@ -18,6 +18,9 @@ venv/
 .vscode/
 .idea/
 
+# Data
+data/
+
 # Env
 .env
 .env.*
