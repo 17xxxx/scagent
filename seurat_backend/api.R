@@ -22,12 +22,23 @@ source("/workspace/seurat_backend/01_qc.R")
 
 #* 通用分发网关
 #* @post /api/execute_task
-function(req) {
+function(req, ...) {
   # 1. 从 HTTP 请求体中直接获取解析好的 JSON 数据 (此时是一个 R List)
   body <- req$body
   
   tool_name <- body$tool_name
   tool_params <- body$params      # 这就是你的"未知参数 JSON 对象"
+
+  # ── 调试日志：打印收到的参数结构 ──
+  cat("\n══════════════════════════════════════════\n")
+  cat("[api.R] 收到请求\n")
+  cat("  tool_name :", tool_name, "\n")
+  cat("  params 名字:", paste(names(tool_params), collapse = ", "), "\n")
+  if ("samples" %in% names(tool_params)) {
+    cat("  samples 数量:", length(tool_params$samples), "\n")
+    cat("  samples 名字:", paste(names(tool_params$samples), collapse = ", "), "\n")
+  }
+  cat("══════════════════════════════════════════\n\n")
   
   # 2. 根据工具名，映射到对应的 R 函数字串
   # 未来每增加一个新工具，只需要在这个映射表里加一行即可

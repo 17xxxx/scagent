@@ -1,0 +1,161 @@
+1.# 数据导入（10x Genomics格式）
+data_dir <- "data/filtered_feature_bc_matrix" # 替换为你的数据路径
+counts <- Read10X(data.dir = data_dir) # 读取后为稀疏矩阵（行=基因，列=细胞）
+ 
+# 构建Seurat对象（设置项目名，保存原始计数）
+seurat_obj <- CreateSeuratObject(
+  counts = counts,
+  project = "scRNA_Sample", # 项目名，可自定义
+  min.cells = 3, # 至少在3个细胞中表达的基因才保留（过滤低置信基因）
+  min.features = 200 # 至少表达200个基因的细胞才保留（初步过滤空细胞）
+)
+ 
+# 查看Seurat对象结构
+print(seurat_obj)
+# 输出示例：An object of class Seurat 
+# 31053 features across 2792 samples within 1 assay 
+# Active assay: RNA (31053 features, 0 variable features)
+
+2.关键预处理：添加细胞元数据
+# 计算线粒体基因比例（线粒体基因以"MT-"开头，人类；小鼠为"Mt-"）
+seurat_obj[["percent.mt"]] <- PercentageFeatureSet(seurat_obj, pattern = "^MT-")
+ 
+# 计算核糖体基因比例（核糖体基因以"RPS"或"RPL"开头）
+seurat_obj[["percent.ribo"]] <- PercentageFeatureSet(seurat_obj, pattern = "^RP[SL]")
+ 
+# 查看元数据前5行（包含nFeature_RNA=基因数、nCount_RNA=测序深度、percent.mt=线粒体比例）
+head(seurat_obj@meta.data)
+
+
+3. 可视化质控指标（小提琴图）
+vln_plot <- VlnPlot(
+  seurat_obj,
+  features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.ribo"),
+  ncol = 2, # 2列布局
+  pt.size = 0.1 # 点大小（避免重叠）
+) + theme_paper()
+print(vln_plot)
+ggsave("plots/quality_control_vln.pdf", vln_plot, width = 10, height = 8, dpi = 300)
+ 
+可视化基因数与测序深度的相关性（散点图）
+feature_count_plot <- FeatureScatter(
+  seurat_obj,
+  feature1 = "nCount_RNA",
+  feature2 = "nFeature_RNA",
+  group.by = "orig.ident",
+  pt.size = 0.3
+) + theme_paper()
+print(feature_count_plot)
+ggsave("plots/feature_count_cor.pdf", feature_count_plot, width = 8, height = 6, dpi = 300)
+ 
+4.基于阈值过滤低质量细胞
+seurat_obj_filtered <- subset(
+  seurat_obj,
+  subset = nFeature_RNA > 200 & nFeature_RNA < 6000 &
+    percent.mt < 5 & percent.ribo > 10
+)
+ 
+# 查看过滤前后细胞数变化
+cat("过滤前细胞数：", ncol(seurat_obj), "\n")
+cat("过滤后细胞数：", ncol(seurat_obj_filtered), "\n")
+# 示例输出：过滤前细胞数：2792 → 过滤后细胞数：2518（保留约90%，合理范围）
+
+
+# 将所有过滤后的单样本对象合并成一个大对象
+seurat_obj_filtered <- merge(
+  x = seurat_obj_filtered_1, 
+  y = seurat_obj_filtered_2, 
+  add.cell.ids = c("b1", "b2") # 在细胞条形码前加上前缀，防止不同样本的细胞重名
+)
+
+# 【关键】利用合并时生成的 orig.ident（即前面的 project 参数），生成 batch 列，供第8步的 Harmony 使用
+seurat_obj_filtered$batch <- seurat_obj_filtered$orig.ident
+
+5. 归一化（Normalization）
+# 归一化（默认LogNormalize：表达量=log2(Counts/文库大小×10000 + 1)）
+seurat_obj_filtered <- NormalizeData(
+  object = seurat_obj_filtered,
+  normalization.method = "LogNormalize",
+  scale.factor = 10000 # 缩放因子（每细胞总表达量标准化到10000）
+)
+ 
+# 查看归一化后的数据（前5行前5列）
+head(GetAssayData(seurat_obj_filtered, assay = "RNA", slot = "data")[1:5, 1:5])
+
+# 筛选高变基因（默认筛选2000个，可调整nfeatures参数）
+seurat_obj_filtered <- FindVariableFeatures(
+  object = seurat_obj_filtered,
+  selection.method = "vst", # 方差稳定转换（适合单细胞数据）
+  nfeatures = 2000
+)
+
+ 6. 高变基因筛选（Variable Features）
+# 可视化前20个高变基因
+top10_var_genes <- head(VariableFeatures(seurat_obj_filtered), 10)
+var_genes_plot <- VariableFeaturePlot(seurat_obj_filtered) +
+  LabelPoints(
+    plot = .,
+    points = top10_var_genes,
+    repel = TRUE, # 避免标签重叠
+    size = 3
+  ) + theme_paper()
+print(var_genes_plot)
+ggsave("plots/variable_features.pdf", var_genes_plot, width = 10, height = 6, dpi = 300)
+
+7. 标准化（Scaling）
+# 标准化（默认对高变基因进行标准化，可通过features参数指定所有基因）
+seurat_obj_filtered <- ScaleData(
+  object = seurat_obj_filtered,
+  features = VariableFeatures(object = seurat_obj_filtered), # 仅标准化高变基因
+  vars.to.regress = "percent.mt", # 回归线粒体比例（进一步去除技术噪声）
+  verbose = FALSE
+)
+ 
+8.批次矫正
+# 查看标准化后的数据（Z-score）
+head(GetAssayData(seurat_obj_filtered, assay = "RNA", slot = "scale.data")[1:5, 1:5])
+
+# 假设元数据中存在"batch"列（记录每个细胞的批次信息）
+# 若未添加，先手动添加：seurat_obj_filtered$batch <- c(rep("batch1", 1000), rep("batch2", 1518))
+ 
+# 先做PCA（基于高变基因）
+seurat_obj_filtered <- RunPCA(
+  object = seurat_obj_filtered,
+  features = VariableFeatures(object = seurat_obj_filtered),
+  verbose = FALSE
+)
+ 
+# 可视化PCA的批次分布（若不同批次在PC1/PC2上明显分离，需校正）
+pca_batch_plot <- DimPlot(
+  seurat_obj_filtered,
+  reduction = "pca",
+  group.by = "batch",
+  pt.size = 0.3
+) + theme_paper()
+print(pca_batch_plot)
+ggsave("plots/pca_batch_effect.pdf", pca_batch_plot, width = 8, height = 6, dpi = 300)
+
+# 安装并加载Harmony（若未安装）
+# BiocManager::install("Harmony")
+library(Harmony)
+ 
+# 运行Harmony批次校正（基于PCA结果）
+seurat_obj_filtered <- RunHarmony(
+  object = seurat_obj_filtered,
+  group.by.vars = "batch", # 批次变量名
+  assay.use = "RNA",
+  reduction.use = "pca",
+  dims.use = 1:30, # 使用前30个PCA维度
+  verbose = FALSE
+)
+ 
+# 查看校正后的PCA结果（批次混合度提升）
+harmony_pca_plot <- DimPlot(
+  seurat_obj_filtered,
+  reduction = "harmony",
+  group.by = "batch",
+  pt.size = 0.3
+) + theme_paper()
+print(harmony_pca_plot)
+ggsave("plots/harmony_corrected_pca.pdf", harmony_pca_plot, width = 8, height = 6, dpi = 300)
+
