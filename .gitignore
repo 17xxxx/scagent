@@ -21,6 +21,9 @@ venv/
 # Data
 data/
 
+# Tutorial
+langchain教程/
+
 # Env
 .env
 .env.*
