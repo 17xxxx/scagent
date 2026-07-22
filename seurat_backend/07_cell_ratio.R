@@ -171,29 +171,6 @@ run_cell_ratio <- function(...) {
   log_msg("  输出图片:", ratio_file)
 
 
-  # ═══════════════════════════════════════════════════════════════════════
-  #  Step 4: 保存 seuratobject.json
-  # ═══════════════════════════════════════════════════════════════════════
-  log_msg("")
-  log_msg("── Step 4: 保存对象索引 ──")
-
-  new_rds <- file.path(output_dir, paste0(project_name, "_cell_ratio.rds"))
-  saveRDS(seurat_obj, new_rds)
-  log_msg("  rds 保存:", new_rds)
-
-  object_json <- file.path(output_dir, "seuratobject.json")
-  object_info <- list(
-    latest_rds      = paste0(project_name, "_cell_ratio.rds"),
-    latest_rds_path = new_rds,
-    project         = project_name,
-    created_at      = Sys.time(),
-    cells           = ncol(seurat_obj),
-    sample_col      = sample_col,
-    celltype_col    = celltype_col
-  )
-  jsonlite::write_json(object_info, object_json, pretty = TRUE, auto_unbox = TRUE)
-  log_msg("  对象索引:", object_json)
-
   # ── 各样本细胞类型数量汇总 ──
   total_counts <- seurat_obj@meta.data %>%
     group_by(.data[[sample_col]]) %>%
@@ -208,8 +185,6 @@ run_cell_ratio <- function(...) {
     project         = project_name,
     ratio_file      = ratio_file,
     ratio_csv       = csv_path,
-    rds_path        = new_rds,
-    object_json     = object_json,
     log_path        = log_path,
     cells           = ncol(seurat_obj),
     sample_summary  = as.list(total_counts)

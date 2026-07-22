@@ -15,6 +15,8 @@ from pydantic import BaseModel, Field
 
 from langchain_core.tools import tool
 
+from ._log import log_api_call
+
 # R 容器地址（docker-compose 内网，服务名即主机名）
 SEURAT_BASE_URL = os.getenv("SEURAT_API_BASE", "http://seurat:9000")
 
@@ -96,12 +98,7 @@ def run_snn_cluster(
 
     payload = {"tool_name": "snn", "params": r_params}
 
-    # ── 调试日志 ──
-    print("\n══════════════════════════════════════════")
-    print("[snn_cluster_tool] 发送到 R 容器:")
-    print(f"  tool_name : snn")
-    print(f"  params 键 : {list(r_params.keys())}")
-    print("══════════════════════════════════════════\n")
+    log_api_call("snn", r_params)
 
     try:
         resp = requests.post(

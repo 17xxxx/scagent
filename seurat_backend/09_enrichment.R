@@ -245,27 +245,6 @@ run_enrichment <- function(...) {
   }
 
 
-  # ═══════════════════════════════════════════════════════════════════════
-  #  Step 3: 保存 seuratobject.json
-  # ═══════════════════════════════════════════════════════════════════════
-  log_msg("")
-  log_msg("── Step 3: 保存对象索引 ──")
-
-  new_rds <- file.path(output_dir, paste0(project_name, "_enrichment.rds"))
-  saveRDS(seurat_obj, new_rds)
-  log_msg("  rds 保存:", new_rds)
-
-  object_json <- file.path(output_dir, "seuratobject.json")
-  object_info <- list(
-    latest_rds      = paste0(project_name, "_enrichment.rds"),
-    latest_rds_path = new_rds,
-    project         = project_name,
-    created_at      = Sys.time(),
-    cells           = ncol(seurat_obj)
-  )
-  jsonlite::write_json(object_info, object_json, pretty = TRUE, auto_unbox = TRUE)
-  log_msg("  对象索引:", object_json)
-
   sink()
   close(log_con)
 
@@ -276,8 +255,6 @@ run_enrichment <- function(...) {
     cell_groups        = cell_group_names,
     enrichment_files   = pdf_files,
     enrichment_results = enrichment_results,
-    rds_path           = new_rds,
-    object_json        = object_json,
     log_path           = log_path,
     cells              = ncol(seurat_obj)
   ))

@@ -156,16 +156,16 @@ run_cell_annotation <- function(...) {
   log_msg("  聚类数:", length(unique(seurat_obj$seurat_clusters)))
 
   # 修复1: 强制切回 RNA assay（防止上一步残留的 integrated assay 导致 Wilcoxon 失效）
-  DefaultAssay(seurat_obj) <- "RNA"
-  log_msg("  DefaultAssay → RNA")
+  #DefaultAssay(seurat_obj) <- "RNA"
+  #log_msg("  DefaultAssay → RNA")
 
   # 修复1b: 合并 RNA assay 的 split layers（Seurat V5 可能自动拆分 data 层）
   suppressWarnings(seurat_obj <- JoinLayers(seurat_obj, assay = "RNA"))
   log_msg("  RNA layers joined")
 
   # 修复2: 显式将 seurat_clusters 设为当前分组（防止 active.ident 仍是 orig.ident）
-  Idents(seurat_obj) <- seurat_obj$seurat_clusters
-  log_msg("  Idents ← seurat_clusters (", nlevels(seurat_obj), " 个聚类)")
+  #Idents(seurat_obj) <- seurat_obj$seurat_clusters
+  #log_msg("  Idents ← seurat_clusters (", nlevels(seurat_obj), " 个聚类)")
 
   log_msg("  参数: input_dir =", input_dir, ", project =", project_name)
 

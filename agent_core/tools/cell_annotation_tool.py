@@ -15,6 +15,8 @@ from pydantic import BaseModel, Field
 
 from langchain_core.tools import tool
 
+from ._log import log_api_call
+
 # R 容器地址（docker-compose 内网，服务名即主机名）
 SEURAT_BASE_URL = os.getenv("SEURAT_API_BASE", "http://seurat:9000")
 
@@ -97,13 +99,7 @@ def run_cell_type_annotation(
 
     payload = {"tool_name": "anno", "params": r_params}
 
-    # ── 调试日志 ──
-    print("\n══════════════════════════════════════════")
-    print("[cell_annotation_tool] 发送到 R 容器:")
-    print(f"  tool_name : anno")
-    print(f"  params 键 : {list(r_params.keys())}")
-    print(f"  species   : {species}")
-    print("══════════════════════════════════════════\n")
+    log_api_call("anno", r_params)
 
     try:
         resp = requests.post(

@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field
 
 from langchain_core.tools import tool
 
+from ._log import log_api_call
+
 SEURAT_BASE_URL = os.getenv("SEURAT_API_BASE", "http://seurat:9000")
 
 
@@ -32,8 +34,8 @@ class RunDimplotInput(BaseModel):
         description="分组着色列，默认 [orig.ident, cell_type]",
     )
     split_by: Optional[str] = Field(
-        default=None,
-        description="按该列拆分子图，如 orig.ident，默认不拆分",
+        default="orig.ident",
+        description="按该列拆分子图，如 orig.ident，默认拆分",
     )
     pt_size: Optional[float] = Field(
         default=0.3,
@@ -51,6 +53,9 @@ class RunDimplotInput(BaseModel):
 
 def _call_api(tool_name: str, r_params: dict) -> dict:
     payload = {"tool_name": tool_name, "params": r_params}
+
+    log_api_call(tool_name, r_params)
+
     try:
         resp = requests.post(
             f"{SEURAT_BASE_URL}/api/execute_task",

@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field
 
 from langchain_core.tools import tool
 
+from ._log import log_api_call
+
 SEURAT_BASE_URL = os.getenv("SEURAT_API_BASE", "http://seurat:9000")
 
 
@@ -37,6 +39,9 @@ class RunCellRatioInput(BaseModel):
 
 def _call_api(tool_name: str, r_params: dict) -> dict:
     payload = {"tool_name": tool_name, "params": r_params}
+
+    log_api_call(tool_name, r_params)
+
     try:
         resp = requests.post(
             f"{SEURAT_BASE_URL}/api/execute_task",
