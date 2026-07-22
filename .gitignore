@@ -13,6 +13,7 @@ venv/
 
 # Docker
 .docker/
+docker-backups/
 
 # IDE
 .vscode/

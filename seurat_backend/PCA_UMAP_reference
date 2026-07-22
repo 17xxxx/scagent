@@ -1,0 +1,84 @@
+PCA UMAP
+工具构建要求：
+参考qc.tool的建立格式，建立新的tools。先写r脚本，再根据r所需的参数，建立tools参数传入api.R的代码
+在开始前，应该参考参数中的全部参数，在脚本开始处集中有条理地设置全部默认参数（默认使用小鼠物种），之后的部分再拆解送进来的json对必要的部分进行赋值。目前json格式没有确定，按照此分析需求进行确定，比如应该包含样本名字和地址的信息的字典（样本数量会变化）以及刚才所说的可选的可调整参数。
+预设的的完整json格式以注释形式写在脚本中，避免使用多层嵌套形式，以变量名区分。
+最终设定的参数除了少数关键值返回以外，大部分生成日志文件输出到固定地址data/新文件夹中。中间生成的图片也保存到data/新文件夹中。
+r脚本最后在data下的新文件夹中创建一个叫做seuratobject的json文件，保存最后一次运行得到的rds文件名，之后的工具可以靠读取最后一个名字获取保存的变量。
+最终在输出文件夹中注册PCA的结果rds文件名。而不是umap变量。
+
+所需seurat对象：
+读取所需seurat对象时从固定的dataqc文件夹中读取对象名（json文件中）和seurat对象。避免在不同运行中使用不同的seurat对象。参考参考01_qc.r中对于结果输出的代码
+
+
+
+参数
+{1. 降维分析 (Dimensionality Reduction)
+降维是后续聚类和可视化的基础。这部分代码涉及评估主成分和非线性降维。
+
+ElbowPlot (评估主成分)
+代码已用参数：
+
+object: 输入的 Seurat 对象。
+
+ndims (50): 计算并展示的前 50 个主成分（PCs）。
+
+高优可调参数（未显式使用）：
+
+reduction: 默认是 "pca"。如果你的数据做了 CCA 或 Harmony 整合，可以通过设定 reduction = "harmony" 或 reduction = "cca" 来评估整合后的维度。
+
+RunUMAP & RunTSNE (非线性降维可视化)
+代码已用参数：
+
+reduction: 使用的线性降维结果（代码中通过条件判断选择了 harmony 或 pca）。
+
+dims (1:15): 输入的主成分数量。这是降维中最关键的参数之一，直接决定保留多少生物学变异。
+
+verbose (FALSE): 关闭运行时的进度条提示。
+
+高优可调参数（未显式使用）：
+
+n.neighbors (UMAP): 默认 30。控制流形学习中局部与全局结构的平衡。值越大，更保留全局结构（大群之间的关系）；值越小，更保留局部结构（细分亚群）。
+
+min.dist (UMAP): 默认 0.3。控制点在低维空间中的紧密程度。值越小，同一聚类的细胞在图上越“抱团”。
+
+perplexity (tSNE): 默认 30。类似于 UMAP 的 n.neighbors，调整它能显著改变 tSNE 图的形状。
+
+seed.use: 默认 42。随机种子，确保每次跑出的 UMAP/tSNE 图一模一样。}
+
+
+# 若已做Harmony校正，用harmony结果做后续分析；否则用pca
+reduction_use <- ifelse("harmony" %in% Reductions(seurat_obj_filtered), "harmony", "pca")
+ 
+# 可视化PCA的Elbow Plot（判断最佳PC数）
+elbow_plot <- ElbowPlot(seurat_obj_filtered, ndims = 50) + theme_paper()
+print(elbow_plot)
+ggsave("plots/elbow_plot.pdf", elbow_plot, width = 8, height = 6, dpi = 300)
+
+
+# 运行UMAP（基于最佳PC数，假设为1:15）
+seurat_obj_filtered <- RunUMAP(
+  object = seurat_obj_filtered,
+  reduction = reduction_use,
+  dims = 1:15, # 最佳PC数，需根据Elbow Plot调整
+  verbose = FALSE
+)
+ 
+# 运行tSNE（可选，UMAP效果更稳定）
+seurat_obj_filtered <- RunTSNE(
+  object = seurat_obj_filtered,
+  reduction = reduction_use,
+  dims = 1:15,
+  verbose = FALSE
+)
+ 
+# 可视化UMAP结果（按默认聚类分组，此时聚类尚未定义，暂按orig.ident分组）
+umap_plot <- DimPlot(
+  seurat_obj_filtered,
+  reduction = "umap",
+  group.by = "orig.ident",
+  pt.size = 0.3,
+  label = FALSE
+) + theme_paper()
+print(umap_plot)
+ggsave("plots/umap_unclustered.pdf", umap_plot, width = 8, height = 6, dpi = 300)

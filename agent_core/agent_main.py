@@ -38,7 +38,7 @@ summarizer = ChatOpenAI(
 summarization_middleware = SummarizationMiddleware(
     model=summarizer,
     trigger=[
-        ("tokens", int(os.getenv("MAX_HISTORY_TOKENS", "1000"))),
+        ("tokens", int(os.getenv("MAX_HISTORY_TOKENS", "6000"))),
     ],
     keep=("messages", int(os.getenv("KEEP_RECENT_MESSAGES", "10"))),
 )
@@ -57,9 +57,20 @@ model = ChatOpenAI(
 )
 
 # ── 工具注册（从 tools/ 子目录导入，每新增工具在此 import 即可） ──
-from tools import run_qc_for_all_samples
+from tools import run_qc_for_all_samples, run_pca_umap, run_snn_cluster, run_cell_type_annotation, \
+    run_dimplot, run_marker_visualization, run_cell_ratio_viz, run_heatmap, run_enrichment_analysis
 
-tools: List = [run_qc_for_all_samples]
+tools: List = [
+    run_qc_for_all_samples,
+    run_pca_umap,
+    run_snn_cluster,
+    run_cell_type_annotation,
+    run_dimplot,
+    run_marker_visualization,
+    run_cell_ratio_viz,
+    run_heatmap,
+    run_enrichment_analysis,
+]
 
 # ── 系统提示词 ──
 SYSTEM_PROMPT = """\

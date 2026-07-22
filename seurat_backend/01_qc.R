@@ -242,6 +242,13 @@ run_quality_control <- function(...) {
     seurat_list[[sname]] <- sobj
   }
 
+  log_msg("  参数: gene_column =", gene_column,
+          ", unique_features =", unique_features,
+          ", strip_suffix =", strip_suffix,
+          ", min_cells =", min_cells,
+          ", min_features =", min_features,
+          ", assay =", assay_name)
+
 
   # ═══════════════════════════════════════════════════════════════════════
   #  Step 2: 添加细胞元数据 — 线粒体% + 核糖体%
@@ -260,6 +267,9 @@ run_quality_control <- function(...) {
 
     seurat_list[[sname]] <- sobj
   }
+
+  log_msg("  参数: mito_pattern =", mito_pattern,
+          ", ribo_pattern =", ribo_pattern)
 
 
   # ═══════════════════════════════════════════════════════════════════════
@@ -292,6 +302,8 @@ run_quality_control <- function(...) {
     ggsave(scat_file, scat_p, width = 8, height = 6, dpi = 300)
     log_msg("  散点图:", scat_file)
   }
+
+  log_msg("  参数: ncol = 2, pt.size = 0.1 (vln), pt.size = 0.3 (scatter), dpi = 300")
 
 
   # ═══════════════════════════════════════════════════════════════════════
@@ -352,6 +364,12 @@ run_quality_control <- function(...) {
   log_msg("  合并后总细胞数:", ncol(merged))
   log_msg("  batch 分组:", paste(unique(merged$batch), collapse = ", "))
 
+  log_msg("  参数: nFeature_RNA >", nfeature_rna_low,
+          "& <", nfeature_rna_high,
+          ", percent.mt <", percent_mt_max,
+          ", percent.ribo >", percent_ribo_min,
+          ", merge_data =", merge_data)
+
 
   # ═══════════════════════════════════════════════════════════════════════
   #  Step 5: 归一化 + 高变基因筛选
@@ -391,6 +409,7 @@ run_quality_control <- function(...) {
   var_file <- file.path(qc_dir, paste0(project_name, "_variable_features.pdf"))
   ggsave(var_file, var_p, width = 10, height = 6, dpi = 300)
   log_msg("  高变基因图:", var_file)
+  log_msg("  参数: top = 10, width = 10, height = 6, dpi = 300")
 
 
   # ═══════════════════════════════════════════════════════════════════════
@@ -481,6 +500,19 @@ run_quality_control <- function(...) {
   saveRDS(merged, file = rds_path)
   log_msg("  Seurat 对象:", rds_path)
 
+  # ── 保存 object.json：记录最后一次运行的 RDS 路径，供后续工具读取 ──
+  object_json <- file.path(qc_dir, "object.json")
+  object_info <- list(
+    latest_rds      = basename(rds_path),
+    latest_rds_path = rds_path,
+    project         = project_name,
+    created_at      = as.character(Sys.time()),
+    cells_after     = ncol(merged),
+    reduction       = if (run_harmony) "harmony" else "pca"
+  )
+  jsonlite::write_json(object_info, object_json, pretty = TRUE, auto_unbox = TRUE)
+  log_msg("  对象索引:", object_json)
+
   # 汇总各样本过滤统计
   total_before <- sum(sapply(cells_summary, `[[`, "before"))
   total_after  <- ncol(merged)
@@ -506,6 +538,7 @@ run_quality_control <- function(...) {
     cells_removed_pct = round(total_removed / total_before * 100, 2),
     per_sample     = cells_summary,
     rds_path       = rds_path,
+    object_json    = object_json,
     log_path       = log_path
   ))
 }

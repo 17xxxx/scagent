@@ -18,7 +18,14 @@ library(plumber)
 
 # 预先加载所有工具脚本
 source("/workspace/seurat_backend/01_qc.R")
-# source("/workspace/seurat_backend/02_norm_hvg_scale.R") # 未来扩展的脚本
+source("/workspace/seurat_backend/02_pca_umap.R")
+source("/workspace/seurat_backend/03_snn_cluster.R")
+source("/workspace/seurat_backend/04_cell_annotation.R")
+source("/workspace/seurat_backend/05_dimplot.R")
+source("/workspace/seurat_backend/06_marker_viz.R")
+source("/workspace/seurat_backend/07_cell_ratio.R")
+source("/workspace/seurat_backend/08_heatmap.R")
+source("/workspace/seurat_backend/09_enrichment.R")
 
 #* 通用分发网关
 #* @post /api/execute_task
@@ -43,8 +50,15 @@ function(req, ...) {
   # 2. 根据工具名，映射到对应的 R 函数字串
   # 未来每增加一个新工具，只需要在这个映射表里加一行即可
   func_mapping <- list(
-    "qc"  = "run_quality_control",
-    "pca" = "run_pca_analysis"
+    "qc"          = "run_quality_control",
+    "pca"         = "run_pca_umap_analysis",
+    "snn"         = "run_snn_cluster",
+    "anno"        = "run_cell_annotation",
+    "dimplot"     = "run_dimplot",
+    "marker_viz"  = "run_marker_viz",
+    "cell_ratio"  = "run_cell_ratio",
+    "heatmap"     = "run_heatmap",
+    "enrichment"  = "run_enrichment"
   )
   
   target_function_name <- func_mapping[[tool_name]]
