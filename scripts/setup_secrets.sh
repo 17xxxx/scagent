@@ -16,9 +16,12 @@
 #      ./scripts/setup_secrets.sh                    # 从项目根 .env 迁移
 #      ./scripts/setup_secrets.sh --target DIR       # 指定目录
 #      ./scripts/setup_secrets.sh --from FILE        # 从别的 env 文件读取
+#                                                    # （无 .env 时会自动继承 ~/.config/scagent）
 #      ./scripts/setup_secrets.sh --force            # 覆盖已存在的密钥
 #      ./scripts/setup_secrets.sh --check            # 只检查现状，不写文件
 #      ./scripts/setup_secrets.sh --sanitize         # 清理项目内 .env 里的活密钥
+#      ./scripts/setup_secrets.sh --target deploy/secrets --profile prod
+#                                                    # 生产密钥（允许放在项目内）
 # ═══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -36,6 +39,7 @@ FROM_FILE="$ROOT/.env"
 FORCE=0
 CHECK_ONLY=0
 SANITIZE=0
+PROFILE="auto"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -44,6 +48,7 @@ while [ $# -gt 0 ]; do
     --force)  FORCE=1 ;;
     --check)  CHECK_ONLY=1 ;;
     --sanitize) SANITIZE=1 ;;
+    --profile|--for) shift; PROFILE="${1:?--profile 需要 dev 或 prod}" ;;
     -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "未知参数: $1" ;;
   esac
@@ -70,15 +75,111 @@ TARGET="$(_norm "$TARGET")"
 
 printf '  目标目录: %s\n' "$TARGET"
 
-# ── 安全检查：目标目录绝不能在项目内 ─────────────────────────────────────────
+# ── 安全护栏：dev 与 prod 的规则不同 ─────────────────────────────────────────
+#   dev  ：开发编排挂载 `..:/workspace`（整个仓库）→ 项目内密钥会被带进容器，
+#          必须放在项目之外。
+#   prod ：生产编排只挂 `${SCAGENT_WORKSPACE}/workspace` 与参考数据卷，
+#          仓库根【不进】容器 → deploy/secrets/ 是安全且惯用的位置。
+#          但仍需确认没有把仓库根误配成挂载源。
 case "$TARGET" in
-  "$ROOT_ABS"|"$ROOT_ABS"/*)
-    die "目标目录位于项目内（$TARGET）。
-      开发编排会把整个仓库挂进容器（..:/workspace），
-      放在项目内的密钥文件会随挂载进入容器，secrets 就失去意义。
-      请改用项目外的目录，例如默认的 \$HOME/.config/scagent" ;;
+  "$ROOT_ABS"|"$ROOT_ABS"/*) IN_REPO=1 ;;
+  *) IN_REPO=0 ;;
 esac
-ok "目标目录在项目之外（挂载不会带进去）"
+
+if [ "$PROFILE" = "auto" ]; then
+  if [ "$IN_REPO" -eq 1 ]; then PROFILE="prod"; else PROFILE="dev"; fi
+fi
+case "$PROFILE" in dev|prod) ;; *) die "--profile 只能是 dev 或 prod（当前: $PROFILE）" ;; esac
+
+# 从 compose 的 volumes 行里取挂载源（能处理 ${VAR:-default} 形式）
+_extract_mount_src() {
+  local line="$1"
+  line="${line#*- }"; line="${line#\"}"
+  if [[ "$line" == *'${'*'}'* ]]; then
+    local inner="${line#*\${}"; inner="${inner%%\}*}"
+    local dflt="${inner#*:-}"
+    [ "$dflt" = "$inner" ] && dflt=""     # 没有 :- 说明无默认值
+    printf '%s' "$dflt"
+  else
+    printf '%s' "${line%%:*}"
+  fi
+}
+
+# 判断密钥目录是否落在某个挂载源【之下】—— 这才是因果判断。
+#   对比两种写法：
+#     ✗ 错误问法："挂载源是否在仓库内" → 会把 ../workspace 误判为危险
+#     ✓ 正确问法："密钥目录是否在挂载源之下" → 精确命中"会被带进容器"
+check_target_not_mounted() {
+  local cf="$1" label="$2" line src resolved bad=0 seen=""
+  [ -f "$cf" ] || { warn "找不到 $cf，跳过挂载校验"; return 0; }
+
+  _check_src() {   # _check_src <原始写法> <解析后的绝对路径>
+    local raw="$1" abs="$2"
+    [ -z "$abs" ] && return 0
+    case "$seen" in *"|$abs|"*) return 0 ;; esac      # 去重（两个服务挂同一路径）
+    seen="$seen|$abs|"
+    case "$TARGET" in
+      "$abs"|"$abs"/*)
+        warn "$label 会把密钥目录带进容器： $raw  →  $abs"
+        bad=1 ;;
+    esac
+  }
+
+  # 1) compose 文件里声明的挂载（含 ${VAR:-default} 的默认值）
+  while IFS= read -r line; do
+    src="$(_extract_mount_src "$line")"
+    [ -z "$src" ] && continue
+    case "$src" in
+      /*) resolved="$src" ;;
+      *)  resolved="$(realpath -m "$(dirname "$cf")/$src" 2>/dev/null || echo "$src")" ;;
+    esac
+    _check_src "$src" "$resolved"
+  done < <(grep -E '^\s*-\s*"?[^"]*:[^"]*"?\s*$' "$cf" 2>/dev/null | grep -vE '^\s*#')
+
+  # 2) 运行时覆盖：deploy/.env 里的 SCAGENT_WORKSPACE 可能指向别处
+  if [ -f "$ROOT/deploy/.env" ]; then
+    local ws
+    ws="$(sed -n 's/^[[:space:]]*SCAGENT_WORKSPACE[[:space:]]*=[[:space:]]*//p' "$ROOT/deploy/.env" \
+          | tail -1 | tr -d '"'"'"'\r')"
+    if [ -n "$ws" ]; then
+      case "$ws" in /*) resolved="$ws" ;; *) resolved="$(realpath -m "$ROOT/deploy/$ws")" ;; esac
+      _check_src "SCAGENT_WORKSPACE=$ws" "$resolved"
+    fi
+  fi
+
+  return "$bad"
+}
+
+# dev 与 prod 用同一套【因果】判断，只是检查的 compose 文件不同
+if [ "$PROFILE" = "dev" ]; then
+  COMPOSE_TO_CHECK="$ROOT/.devcontainer/docker-compose.yml"
+  COMPOSE_LABEL="开发编排"
+else
+  COMPOSE_TO_CHECK="$ROOT/deploy/docker-compose.yml"
+  COMPOSE_LABEL="生产编排"
+fi
+
+if check_target_not_mounted "$COMPOSE_TO_CHECK" "$COMPOSE_LABEL"; then
+  if [ "$IN_REPO" -eq 1 ]; then
+    ok "【$PROFILE】密钥目录在项目内，但$COMPOSE_LABEL不会把它带进容器 → 安全"
+  else
+    ok "【$PROFILE】密钥目录在项目之外（挂载不会带进去）"
+  fi
+else
+  die "【$PROFILE】密钥目录会被 $COMPOSE_LABEL 带进容器，Docker secrets 失去意义。
+
+      目标：  $TARGET
+      原因：  上面的挂载源是它的父目录之一。
+
+      处置（二选一）：
+        1) 换成项目外目录：
+               ./scripts/setup_secrets.sh --target \$HOME/.config/scagent
+        2) 若这是生产密钥，请修正挂载源不要包含它 ——
+           检查 deploy/.env 的 SCAGENT_WORKSPACE 是否指向了仓库根。
+
+      如果你要准备的是【生产】密钥：
+          ./scripts/setup_secrets.sh --target deploy/secrets --profile prod"
+fi
 
 # ── 只检查模式 ────────────────────────────────────────────────────────────────
 read_env() {   # read_env <变量名> <文件>
@@ -174,6 +275,25 @@ if [ -z "$api_key" ]; then
   api_key="${DEEPSEEK_API_KEY:-}"
   [ -n "$api_key" ] && ok "从环境变量 DEEPSEEK_API_KEY 读到"
 fi
+
+# 占位符/残留值不算有效密钥（例：.env 里被清空成 sk- 或 sk-请替换为你的密钥）
+if [ -n "$api_key" ] && ! printf '%s' "$api_key" | grep -qE '^sk-[A-Za-z0-9_-]{16,}$'; then
+  warn "取到的值不像有效密钥（长度 ${#api_key}，内容以 ${api_key:0:6} 开头）—— 已忽略"
+  api_key=""
+fi
+# 3) 继承已有 secrets 目录 —— 让"开发 → 生产"一条命令完成
+if [ -z "$api_key" ]; then
+  for cand in "${SCAGENT_SECRETS_DIR:-}" "$HOME/.config/scagent"; do
+    [ -n "$cand" ] || continue
+    [ "$(realpath -m "$cand")" = "$TARGET" ] && continue    # 就是目标目录，无需继承
+    if [ -s "$cand/deepseek_api_key" ]; then
+      api_key="$(tr -d '\r\n' < "$cand/deepseek_api_key")"
+      ok "从已有 secrets 继承 LLM Key：$cand/deepseek_api_key"
+      break
+    fi
+  done
+fi
+
 if [ -z "$api_key" ]; then
   if [ -t 0 ]; then
     printf '  未找到 LLM API Key。请粘贴（不回显，粘贴后回车）：\n  > '
@@ -193,6 +313,22 @@ esac
 token=""
 [ -f "$FROM_FILE" ] && token=$(read_env SCAGENT_TOKEN "$FROM_FILE")
 [ -z "$token" ] && token="${SCAGENT_TOKEN:-}"
+# 残留的占位值不算数（长度过短就不是真令牌）
+if [ -n "$token" ] && [ "${#token}" -lt 24 ]; then
+  warn "取到的令牌过短（${#token} 字符）—— 已忽略"
+  token=""
+fi
+if [ -z "$token" ]; then
+  for cand in "${SCAGENT_SECRETS_DIR:-}" "$HOME/.config/scagent"; do
+    [ -n "$cand" ] || continue
+    [ "$(realpath -m "$cand")" = "$TARGET" ] && continue
+    if [ -s "$cand/scagent_token" ]; then
+      token="$(tr -d '\r\n' < "$cand/scagent_token")"
+      ok "从已有 secrets 继承访问令牌：$cand/scagent_token"
+      break
+    fi
+  done
+fi
 if [ -n "$token" ]; then
   ok "复用已有访问令牌"
 else
@@ -207,11 +343,10 @@ fi
 # ── 写文件 ────────────────────────────────────────────────────────────────────
 info "[2/3] 写入密钥文件"
 
-# 再兜一道：确认没被别的路径绕过
-case "$TARGET" in
-  "$ROOT_ABS"|"$ROOT_ABS"/*)
-    die "内部错误：目标目录仍在项目内（$TARGET），已中止写入" ;;
-esac
+# 写入前再兜一道（用与前面一致的因果判断，而非"是否在项目内"）
+if ! check_target_not_mounted "$COMPOSE_TO_CHECK" "$COMPOSE_LABEL"; then
+  die "写入前复查失败：密钥目录会被 $COMPOSE_LABEL 带进容器，已中止"
+fi
 
 if [ -e "$KEY_FILE" ] && [ "$FORCE" -eq 0 ]; then
   warn "$KEY_FILE 已存在，未覆盖（要覆盖请加 --force）"
