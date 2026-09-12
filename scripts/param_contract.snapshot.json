@@ -39,7 +39,7 @@
       "pt_size": "0.3",
       "reduction": "umap",
       "repel": "True",
-      "split_by": "None"
+      "split_by": "orig.ident"
     },
     "keys": [
       "group_by",

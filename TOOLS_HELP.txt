@@ -1,6 +1,6 @@
 ================================================================================
   scAgent 工具参数帮助文档
-  工具总数: 10  |  生成时间: 2026-09-12 22:11
+  工具总数: 10  |  生成时间: 2026-09-12 22:20
   本文件由 scripts/gen_tools_help.py 自动生成，请勿手工编辑。
 ================================================================================
 
@@ -131,10 +131,11 @@
                                                     umap
   group_by              list[str] ['orig.ident', 'cell_type']分组着色列，默认 [orig.ide
                                                     nt, cell_type]
-  split_by              str       None              按该列拆分子图（如 orig.id
-                                                    ent）。默认 None = 不拆分，
-                                                    与 R 端 05_dimplot.R 的默
-                                                    认值保持一致
+  split_by              str       orig.ident        按该列拆分子图。默认 orig.
+                                                    ident —— 即按样本拆成多张
+                                                    子图（9 个样本 → 9 张）。
+                                                    设为 None 则不拆分，出一张
+                                                    合并图
   pt_size               float     0.3               点大小
   label                 bool      True              显示聚类/细胞类型标签
   repel                 bool      True              标签防重叠

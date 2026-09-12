@@ -34,9 +34,9 @@ class RunDimplotInput(BaseModel):
         description="分组着色列，默认 [orig.ident, cell_type]",
     )
     split_by: Optional[str] = Field(
-        default=None,
-        description="按该列拆分子图（如 orig.ident）。默认 None = 不拆分，"
-                    "与 R 端 05_dimplot.R 的默认值保持一致",
+        default="orig.ident",
+        description="按该列拆分子图。默认 orig.ident —— 即按样本拆成多张子图"
+                    "（9 个样本 → 9 张）。设为 None 则不拆分，出一张合并图",
     )
     pt_size: Optional[float] = Field(
         default=0.3,
@@ -74,7 +74,7 @@ def run_dimplot(
     project: str = "scRNA_project",
     reduction: str = "umap",
     group_by: Optional[List[str]] = None,
-    split_by: Optional[str] = None,
+    split_by: Optional[str] = "orig.ident",
     pt_size: float = 0.3,
     label: bool = True,
     repel: bool = True,
@@ -88,7 +88,7 @@ def run_dimplot(
         project: 项目名称
         reduction: 降维类型 umap/pca
         group_by: 分组着色列列表
-        split_by: 拆分子图的列名
+        split_by: 拆分子图的列名，默认 orig.ident（按样本拆分）
         pt_size: 点大小
         label: 是否显示标签
         repel: 标签防重叠
