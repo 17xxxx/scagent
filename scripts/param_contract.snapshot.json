@@ -1,0 +1,167 @@
+{
+  "cell_annotation_tool.py": {
+    "defaults": {
+      "logfc_threshold": "0.25",
+      "max_cells_per_ident": "None",
+      "project": "scRNA_project",
+      "singler_de_method": "classic",
+      "species": "mouse"
+    },
+    "keys": [
+      "logfc_threshold",
+      "max_cells_per_ident",
+      "project",
+      "singler_de_method",
+      "species"
+    ],
+    "tool_name": "anno"
+  },
+  "cell_ratio_tool.py": {
+    "defaults": {
+      "group_by_celltype": "cell_type",
+      "group_by_sample": "orig.ident",
+      "position": "stack",
+      "project": "scRNA_project"
+    },
+    "keys": [
+      "group_by_celltype",
+      "group_by_sample",
+      "position",
+      "project"
+    ],
+    "tool_name": "cell_ratio"
+  },
+  "dimplot_tool.py": {
+    "defaults": {
+      "group_by": "['orig.ident', 'cell_type']",
+      "label": "True",
+      "project": "scRNA_project",
+      "pt_size": "0.3",
+      "reduction": "umap",
+      "repel": "True",
+      "split_by": "None"
+    },
+    "keys": [
+      "group_by",
+      "label",
+      "project",
+      "pt_size",
+      "reduction",
+      "repel",
+      "split_by"
+    ],
+    "tool_name": "dimplot"
+  },
+  "enrichment_tool.py": {
+    "defaults": {
+      "cell_group_names": "None",
+      "ont": "BP",
+      "project": "scRNA_project",
+      "qvalue_cutoff": "0.05",
+      "show_category": "10",
+      "species": "mouse"
+    },
+    "keys": [
+      "cell_group_names",
+      "ont",
+      "org_db",
+      "project",
+      "qvalue_cutoff",
+      "show_category",
+      "species"
+    ],
+    "tool_name": "enrichment"
+  },
+  "heatmap_tool.py": {
+    "defaults": {
+      "group_by": "cell_type",
+      "project": "scRNA_project",
+      "sample_n": "None",
+      "top_n": "5"
+    },
+    "keys": [
+      "group_by",
+      "project",
+      "sample_n",
+      "top_n"
+    ],
+    "tool_name": "heatmap"
+  },
+  "marker_viz_tool.py": {
+    "defaults": {
+      "group_by": "cell_type",
+      "marker_genes": "None",
+      "ncol": "2",
+      "project": "scRNA_project",
+      "pt_size": "0.1"
+    },
+    "keys": [
+      "group_by",
+      "marker_genes",
+      "ncol",
+      "project",
+      "pt_size"
+    ],
+    "tool_name": "marker_viz"
+  },
+  "pca_umap_tool.py": {
+    "defaults": {
+      "dimplot_group_by": "orig.ident",
+      "elbow_ndims": "50",
+      "project": "scRNA_project",
+      "umap_dims": "1:15",
+      "umap_min_dist": "0.3",
+      "umap_n_neighbors": "30"
+    },
+    "keys": [
+      "dimplot_group_by",
+      "elbow_ndims",
+      "project",
+      "umap_dims",
+      "umap_min_dist",
+      "umap_n_neighbors"
+    ],
+    "tool_name": "pca"
+  },
+  "qc_tool.py": {
+    "defaults": {
+      "min_cells": "3",
+      "min_features": "200",
+      "nfeature_rna_high": "6000",
+      "nfeature_rna_low": "200",
+      "percent_mt_max": "5",
+      "percent_ribo_min": "10",
+      "project": "scRNA_project",
+      "run_harmony": "True"
+    },
+    "keys": [
+      "min_cells",
+      "min_features",
+      "nfeature_rna_high",
+      "nfeature_rna_low",
+      "percent_mt_max",
+      "percent_ribo_min",
+      "project",
+      "run_harmony",
+      "samples"
+    ],
+    "tool_name": "qc"
+  },
+  "snn_cluster_tool.py": {
+    "defaults": {
+      "cluster_algorithm": "1",
+      "findneighbor_dims": "1:15",
+      "k_param": "20",
+      "project": "scRNA_project",
+      "resolution": "0.8"
+    },
+    "keys": [
+      "cluster_algorithm",
+      "findneighbor_dims",
+      "k_param",
+      "project",
+      "resolution"
+    ],
+    "tool_name": "snn"
+  }
+}
