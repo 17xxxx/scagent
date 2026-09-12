@@ -1,27 +1,73 @@
-version: '3.8'
+# ═══════════════════════════════════════════════════════════════════════════════
+#  .devcontainer/docker-compose.yml —— 开发环境编排
+#
+#  ⚠️ 与 deploy/docker-compose.yml 的区别：
+#     · 本文件是**开发用**：源码挂载进容器、agent 常驻 sleep 供 VS Code 连入
+#     · deploy/ 那份是**生产用**：只消费私有 registry 的镜像、网络隔离、不做构建
+#
+#  重要（分层构建）：seurat_backend/Dockerfile 现在是**应用层**，
+#  它的 FROM 指向 scagent-runtime 镜像。因此必须先构建出 runtime，再构建 seurat。
+#  推荐用 scripts/dev_build.sh 一次性完成（它会处理构建顺序）。
+#
+#  快速开始：
+#      ./scripts/dev_build.sh                                          # 首次 30–90 分钟
+#      docker compose -f .devcontainer/docker-compose.yml up -d
+#      docker compose -f .devcontainer/docker-compose.yml exec agent \
+#          python /workspace/agent_core/pipeline_cli.py status
+# ═══════════════════════════════════════════════════════════════════════════════
 
 services:
-  # 主容器：AI Agent 开发环境
-  agent:
-    build: 
-      context: ..
-      dockerfile: agent_core/Dockerfile
-    volumes:
-      # 将整个项目目录挂载到容器内的 /workspace
-      - ..:/workspace:cached
-    # 保持容器存活，等待 VS Code 连入
-    command: sleep infinity
-    depends_on:
-      - seurat
 
-  # 副容器：R 生信后端
+  # ── R 应用层（只 COPY 代码；改一次重建数秒）────────────────────────────────
   seurat:
-    build: 
+    build:
       context: ..
       dockerfile: seurat_backend/Dockerfile
+      args:
+        # 开发环境复用 scripts/dev_build.sh 构建出的本地 runtime 镜像
+        RUNTIME: scagent-runtime:dev
+    image: scagent-seurat:dev
     ports:
-      - "9000:9000"
+      - "9000:9000"                      # 暴露出来便于本地调试 R 接口
     volumes:
       - ..:/workspace:cached
-    # 启动 Plumber API
-    command: Rscript -e "pr <- plumber::pr('/workspace/seurat_backend/api.R'); plumber::pr_run(pr, host='0.0.0.0', port=9000)"
+      # 参考数据：只读挂载，不进镜像。开发用项目内目录，避免污染宿主机 /data
+      - ../.biodata:/ref:ro
+    environment:
+      SCAGENT_BACKEND_DIR: /workspace/seurat_backend
+      SCAGENT_DATA_DIR: /workspace/data
+      SCAGENT_REFDATA_DIR: /ref/celldex
+      SCAGENT_API_HOST: 0.0.0.0
+      SCAGENT_API_PORT: "9000"
+    command: Rscript /workspace/seurat_backend/run_api.R
+    restart: unless-stopped
+
+  # ── Agent（开发态：常驻，供 VS Code 连入或 docker exec）─────────────────────
+  agent:
+    build:
+      context: ..
+      dockerfile: agent_core/Dockerfile
+    image: scagent-agent:dev
+    volumes:
+      - ..:/workspace:cached
+    environment:
+      SEURAT_API_BASE: http://seurat:9000
+      SCAGENT_DATA_DIR: /workspace/data
+      SCAGENT_STATE_DIR: /workspace/state
+      SCAGENT_BACKEND_DIR: /workspace/seurat_backend
+      SCAGENT_API_PORT: "8080"
+      # ⚠️ 仅供本地开发；生产环境必须用 deploy/.env 里的随机令牌
+      SCAGENT_TOKEN: ${SCAGENT_TOKEN:-devtoken-change-me}
+      # 未配置 Key 时可设 SCAGENT_LLM_PROVIDER=none，改用 pipeline_cli.py
+      SCAGENT_LLM_PROVIDER: ${SCAGENT_LLM_PROVIDER:-deepseek}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+    ports:
+      - "127.0.0.1:8080:8080"            # 只在宿主机本地可访问
+    depends_on:
+      - seurat
+    command: sleep infinity
+
+networks:
+  default:
+    name: scagent-dev

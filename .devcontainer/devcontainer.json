@@ -10,9 +10,20 @@
         "ms-python.python",
         "ms-python.vscode-pylance",
         "charliermarsh.ruff"
-      ]
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.analysis.extraPaths": ["/workspace/agent_core"]
+      }
     }
   },
 
-  "postCreateCommand": "pip install --no-cache-dir -r /workspace/agent_core/requirements.txt"
+  // ⚠️ 前置条件：先在宿主机执行一次 ./scripts/dev_build.sh
+  //    seurat 服务是应用层（FROM scagent-runtime:dev），
+  //    runtime 镜像必须先构建出来，否则容器构建会失败。
+  //
+  //    由于该镜像现在由 Dockerfile 完整安装依赖（含离线 wheelhouse 校验），
+  //    postCreate 不再重复 pip install，只做一次依赖可用性校验，
+  //    避免用未锁定的版本覆盖镜像里已验证过的依赖。
+  "postCreateCommand": "python -c \"from langchain.agents import create_agent; import fastapi, uvicorn, langgraph; print('依赖自检通过')\""
 }
