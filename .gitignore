@@ -25,6 +25,19 @@ data/
 # Tutorial
 langchain教程/
 
-# Env
+# Env —— .env.sample 必须保留在仓库中作为配置模板
 .env
 .env.*
+!.env.sample
+
+# Windows 元数据垃圾（从 Windows 拷贝文件时产生）
+*:Zone.Identifier
+
+# 备份与构建产物
+*.bak
+*.orig
+bundle/
+dist/
+
+# 运行时状态（SQLite 会话检查点等）
+state/

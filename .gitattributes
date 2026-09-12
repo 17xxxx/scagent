@@ -1,0 +1,39 @@
+# 行尾与二进制标记 —— 统一为 LF，避免 Windows 编辑把 diff 变成整文件噪声
+* text=auto eol=lf
+
+*.py    text eol=lf
+*.R     text eol=lf
+*.r     text eol=lf
+*.sh    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+Dockerfile text eol=lf
+*.Dockerfile text eol=lf
+.gitattributes text eol=lf
+.gitignore text eol=lf
+
+# Windows 侧脚本保留 CRLF
+*.ps1   text eol=crlf
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# 二进制（禁止任何行尾转换）
+*.rds       binary
+*.RDS       binary
+*.pdf       binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gz        binary
+*.tgz       binary
+*.zip       binary
+*.zst       binary
+*.tar       binary
+*.mtx       binary
+*.tsv       binary
+*.h5        binary
+*.h5ad      binary
+*.sqlite    binary

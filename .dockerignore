@@ -1,0 +1,50 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  .dockerignore —— 构建上下文瘦身 + 防止密钥进镜像
+#
+#  背景：docker-compose 的构建上下文是项目根目录（context: ..）。
+#  不加此文件时，会把 data/ (7.2 GB) 与 .env (含 API Key) 一并送给 Docker daemon。
+#  加上后上下文从 7.2 GB 降到 < 350 MB（shared_data/ 284 MB 必须保留）。
+#
+#  注意：.env / *.key / *.pem 必须在列 —— 否则密钥会被 COPY 进镜像层。
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── 密钥与凭据（安全红线，任何情况下都不得进入镜像）──
+.env
+.env.*
+!.env.sample
+*.key
+*.pem
+secrets/
+*credentials*
+
+# ── 版本控制与文档 ──
+.git
+.gitattributes
+.gitignore
+docs/
+*.md
+
+# ── 数据与产物（体积主因）──
+data/
+bundle/
+dist/
+*.rds
+*.pdf
+*.log
+
+# ── 本地构建缓存 ──
+**/__pycache__/
+**/*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.Rproj.user/
+.Rhistory
+.RData
+
+# ── Windows 元数据垃圾 ──
+*:Zone.Identifier
+
+# ── 备份文件 ──
+*.bak
+*.orig
