@@ -75,3 +75,35 @@ networks:
   core:
     internal: true                # ★ 无外网路由：把"零下载"变成架构保证
   egress: {}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  生产环境推荐：用 Docker secrets 传密钥，而不是环境变量
+#
+#  差别：
+#    · 环境变量 → 出现在 `docker inspect` 的 Config.Env 里，
+#                 有 docker 权限的人都能读到
+#    · secrets  → 只在容器内以文件形式存在，不进环境、不进 inspect
+#
+#  用法：
+#    1) mkdir -p deploy/secrets && chmod 700 deploy/secrets
+#       printf '%s' 'sk-你的密钥'  > deploy/secrets/deepseek_api_key
+#       printf '%s' '你的访问令牌' > deploy/secrets/scagent_token
+#       chmod 600 deploy/secrets/*
+#
+#    2) 取消下面的 secrets 段注释，
+#       并给 agent 服务补上：
+#           secrets: [deepseek_api_key, scagent_token]
+#           environment:
+#             SCAGENT_LLM_API_KEY_FILE: /run/secrets/deepseek_api_key
+#             SCAGENT_TOKEN_FILE:       /run/secrets/scagent_token
+#       同时从 deploy/.env 里删掉 DEEPSEEK_API_KEY 与 SCAGENT_TOKEN
+#       （两者都配时以 *_FILE 为准，但留着容易混淆）
+#
+#    3) ./deploy/up.sh
+#
+#  secrets:
+#    deepseek_api_key:
+#      file: ./secrets/deepseek_api_key
+#    scagent_token:
+#      file: ./secrets/scagent_token
+# ═══════════════════════════════════════════════════════════════════════════════

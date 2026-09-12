@@ -34,6 +34,46 @@ def _get_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+class SecretError(RuntimeError):
+    """密钥配置错误（配了 *_FILE 却读不到）—— 应当快速失败，而不是静默回退。"""
+
+
+def _secret(*names: str) -> Optional[str]:
+    """读取密钥，支持 Docker secrets 约定。
+
+    取值优先级（对每个候选名依次尝试）：
+        1. <NAME>_FILE 指向的文件内容      ← 生产推荐，密钥不进容器环境变量
+        2. 环境变量 <NAME>                 ← 开发方便
+
+    为什么需要文件方式：环境变量会出现在 `docker inspect` 的 Config.Env 里，
+    任何有 docker 权限的人都能读到；而 secrets 文件只挂载到容器内，
+    不进环境、不进 `docker inspect`、不进镜像层。
+
+    配了 *_FILE 却读不到时**直接抛错**而不是回退到环境变量 ——
+    静默回退会用错密钥，比启动失败更难排查。
+    """
+    for name in names:
+        file_var = f"{name}_FILE"
+        path = os.getenv(file_var)
+        if path and path.strip():
+            try:
+                with open(path.strip(), "r", encoding="utf-8") as fh:
+                    content = fh.read().strip()
+            except OSError as exc:
+                raise SecretError(
+                    f"{file_var}={path} 读取失败：{exc}"
+                    f"（请确认文件已挂载到容器内且当前用户可读）"
+                ) from exc
+            if not content:
+                raise SecretError(f"{file_var}={path} 是空文件")
+            return content
+    for name in names:
+        val = os.getenv(name)
+        if val and val.strip():
+            return val.strip()
+    return None
+
+
 def _get_float(name: str, default: float) -> float:
     raw = os.getenv(name)
     if raw is None or not raw.strip():
@@ -60,6 +100,9 @@ class Settings:
     state_dir: str             # 会话检查点 / SQLite 等运行时状态
     checkpoint_db: str
 
+    # ── 密钥配置错误（若非空，服务应拒绝启动并原样打印）────────────────────
+    config_error: Optional[str]
+
     # ── 服务 ────────────────────────────────────────────────────────────────
     host: str
     port: int
@@ -79,6 +122,8 @@ class Settings:
 
     def llm_ready(self) -> tuple[bool, str]:
         """检查 LLM 配置是否可用，返回 (是否可用, 原因)。"""
+        if self.config_error:
+            return False, f"密钥配置错误：{self.config_error}"
         if not self.llm_enabled:
             return False, "SCAGENT_LLM_PROVIDER=none（已禁用 LLM，请改用 pipeline_cli.py）"
         if self.llm_provider in {"deepseek", "openai"} and not self.llm_api_key:
@@ -102,12 +147,17 @@ def load_settings() -> Settings:
         or default_base
         or None
     )
-    api_key = (
-        _get("SCAGENT_LLM_API_KEY")
-        or _get("DEEPSEEK_API_KEY")
-        or ("ollama" if provider == "ollama" else None)   # ollama 不校验 key
-        or None
-    )
+    # ── 密钥：支持 *_FILE（Docker secrets），失败即记录错误、不静默回退 ──
+    config_error: Optional[str] = None
+    try:
+        api_key = _secret("SCAGENT_LLM_API_KEY", "DEEPSEEK_API_KEY")
+        token = _secret("SCAGENT_TOKEN") or ""
+    except SecretError as exc:
+        config_error = str(exc)
+        api_key, token = None, ""
+
+    if api_key is None and provider == "ollama":
+        api_key = "ollama"          # ollama 不校验 key
     default_model = {
         "deepseek": "deepseek-v4-flash",
         "ollama": "qwen2.5:7b-instruct",
@@ -132,7 +182,8 @@ def load_settings() -> Settings:
 
         host=_get("SCAGENT_API_HOST", "0.0.0.0"),
         port=_get_int("SCAGENT_API_PORT", 8080),
-        token=_get("SCAGENT_TOKEN", ""),
+        config_error=config_error,
+        token=token,
         hitl_mode=_get("SCAGENT_HITL", "interactive").strip().lower(),
         max_concurrent_runs=_get_int("SCAGENT_MAX_CONCURRENT_RUNS", 2),
         tool_run_limit=_get_int("SCAGENT_TOOL_RUN_LIMIT", 2),

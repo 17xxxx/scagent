@@ -264,10 +264,17 @@ async def require_token(
 async def lifespan(app: FastAPI):
     global AGENT, AGENT_INFO, RUN_SEMAPHORE
 
+    if SETTINGS.config_error:
+        log("startup_error", reason=SETTINGS.config_error)
+        print(f"❌ 密钥配置错误：{SETTINGS.config_error}", file=sys.stderr)
+        raise SystemExit(2)
+
     if not SETTINGS.token:
         log("startup_error", reason="SCAGENT_TOKEN 未设置")
         print("❌ 未设置 SCAGENT_TOKEN —— 服务拒绝启动。\n"
-              "   请用 deploy/configure.sh 生成，或手动 export SCAGENT_TOKEN=<随机串>",
+              "   生成方式： cp deploy/.env.sample deploy/.env && chmod 600 deploy/.env\n"
+              "             把 SCAGENT_TOKEN 填成 $(openssl rand -hex 24)\n"
+              "   生产环境建议用 Docker secrets： SCAGENT_TOKEN_FILE=/run/secrets/scagent_token",
               file=sys.stderr)
         raise SystemExit(2)
 

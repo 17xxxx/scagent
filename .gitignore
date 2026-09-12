@@ -44,3 +44,7 @@ state/
 
 # 开发用参考数据目录（只读挂载到容器 /ref）
 .biodata/
+
+# Docker secrets（绝不入库）
+secrets/
+deploy/secrets/

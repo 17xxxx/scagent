@@ -7,8 +7,9 @@ scagent —— scAgent 本地瘦客户端
 不需要安装 Docker、R、也不需要对 langchain 一无所知的依赖。
 
 配置（优先级：环境变量 > 配置文件）：
-  SCAGENT_SERVER   服务地址，如 https://scagent.example.com
-  SCAGENT_TOKEN    访问令牌
+  SCAGENT_SERVER       服务地址，如 https://scagent.example.com
+  SCAGENT_TOKEN        访问令牌
+  SCAGENT_TOKEN_FILE   令牌文件路径（Docker secrets 约定，优先于 SCAGENT_TOKEN）
   配置文件          ~/.scagent/config.json
 
 用法：
@@ -44,6 +45,17 @@ DEFAULT_TIMEOUT = 3600          # 分析可能跑几十分钟
 # 配置
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _read_secret_file(path: str | None) -> str:
+    """读取 *_FILE 指向的密钥文件（Docker secrets 约定）。仅用标准库。"""
+    if not path or not path.strip():
+        return ""
+    try:
+        with open(path.strip(), "r", encoding="utf-8") as fh:
+            return fh.read().strip()
+    except OSError as exc:
+        sys.exit(f"❌ 读取 SCAGENT_TOKEN_FILE={path} 失败: {exc}")
+
+
 def load_config() -> dict:
     cfg = {}
     if os.path.exists(CONFIG_FILE):
@@ -53,7 +65,9 @@ def load_config() -> dict:
         except (OSError, json.JSONDecodeError):
             cfg = {}
     cfg["server"] = (os.getenv("SCAGENT_SERVER") or cfg.get("server") or "").rstrip("/")
-    cfg["token"] = os.getenv("SCAGENT_TOKEN") or cfg.get("token") or ""
+    cfg["token"] = (os.getenv("SCAGENT_TOKEN")
+                    or _read_secret_file(os.getenv("SCAGENT_TOKEN_FILE"))
+                    or cfg.get("token") or "")
     cfg.setdefault("session_id", "")
     if not cfg["server"] or not cfg["token"]:
         sys.exit("❌ 未配置服务地址或令牌。\n"
