@@ -215,7 +215,7 @@ run_enrichment <- function(...) {
       return(NULL)
     })
 
-    if (is.null(go_result) || nrow(summary(go_result)) == 0) {
+    if (is.null(go_result) || nrow(as.data.frame(go_result)) == 0) {
       log_msg("    跳过:", grp_name, "（无显著富集结果）")
       next
     }
@@ -239,7 +239,7 @@ run_enrichment <- function(...) {
       enrichment_results[[grp_name]] <- list(
         file    = pdf_file,
         n_genes = length(grp_genes),
-        n_enriched = nrow(summary(go_result))
+        n_enriched = nrow(as.data.frame(go_result))
       )
     }
   }

@@ -183,8 +183,7 @@ run_marker_viz <- function(...) {
     vln_args$split.by <- split_by_col
   }
 
-  vln_p <- do.call(VlnPlot, vln_args) +
-    ggtitle(paste(project_name, "— 标记基因小提琴图"))
+  vln_p <- do.call(VlnPlot, vln_args) 
 
   vln_file <- file.path(output_dir, paste0(project_name, "_marker_vln.pdf"))
   ggsave(vln_file, vln_p, width = vln_width, height = vln_height, dpi = dpi_val)

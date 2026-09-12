@@ -27,7 +27,7 @@ class RunDimplotInput(BaseModel):
     )
     reduction: Optional[str] = Field(
         default="umap",
-        description="降维类型: umap, tsne, pca，默认 umap",
+        description="降维类型: umap, pca，默认 umap",
     )
     group_by: Optional[List[str]] = Field(
         default=["orig.ident", "cell_type"],
@@ -78,14 +78,14 @@ def run_dimplot(
     label: bool = True,
     repel: bool = True,
 ) -> dict:
-    """对已完成细胞注释的数据生成 UMAP/tSNE DimPlot 分群可视化。
+    """对已完成细胞注释的数据生成 UMAP DimPlot 分群可视化。
 
     读取细胞注释阶段（工具 4）的输出对象，支持多分组着色和样本拆分。
     **所有参数均为可选**，不传则使用默认值。
 
     Args:
         project: 项目名称
-        reduction: 降维类型 umap/tsne/pca
+        reduction: 降维类型 umap/pca
         group_by: 分组着色列列表
         split_by: 拆分子图的列名
         pt_size: 点大小

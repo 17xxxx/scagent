@@ -1,0 +1,202 @@
+﻿# 鈺斺晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晽
+# 鈺? 08_heatmap.R 鈥斺€?鏍囪鍩哄洜鐑浘 (DoHeatmap)                                     鈺?# 鈺? 鍔熻兘锛氬睍绀烘瘡涓粏鑳炵兢鐨?Top N 鏍囪鍩哄洜鐑浘                                       鈺?# 鈺? 璇诲彇锛歞ata/cell_annotation/seuratobject.json + cluster_markers.csv            鈺?# 鈺? 杈撳嚭锛歞ata/heatmap/{project}_heatmap.pdf銆佹棩蹇椼€乻euratobject.json             鈺?# 鈺氣晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨暆
+
+# 鈹€鈹€ 棰勮 JSON 鏍煎紡锛堟敞閲婏紝渚?Agent / Python tool 鍙傝€冿級 鈹€鈹€
+# {
+#   "project": "scRNA_project",
+#   "top_n": 5,
+#   "group_by": "cell_type",
+#   "size": 3,
+#   "angle": 0,
+#   "raster": false,
+#   "disp_min": -2.5,
+#   "disp_max": 2.5,
+#   "draw_lines": true,
+#   "lines_width": 0.5,
+#   "group_bar": true,
+#   "sample_n": null,
+#   "dpi": 300,
+#   "width": 12,
+#   "height": 10
+# }
+
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+
+
+# 鈺斺晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晽
+# 鈺?             闆嗕腑榛樿鍙傛暟锛堝皬榧犵墿绉嶏級                                          鈺?# 鈺氣晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨暆
+
+run_heatmap <- function(...) {
+  json <- list(...)
+
+  # 鈹€鈹€ 鍩虹鍙傛暟 鈹€鈹€
+  project_name   <- "scRNA_project"
+  input_dir      <- "/workspace/data/cell_annotation"
+  output_dir     <- "/workspace/data/heatmap"
+
+  # 鈹€鈹€ DoHeatmap 鍙傛暟 鈹€鈹€
+  top_n          <- 5
+  heatmap_group_by <- "cell_type"
+  font_size      <- 3
+  font_angle     <- 0
+  raster_val     <- FALSE
+  disp_min       <- -2.5
+  disp_max       <- 2.5
+  draw_lines_val <- TRUE
+  lines_width    <- 0.5
+  group_bar_val  <- TRUE
+  sample_n_val   <- NULL       # NULL = 浣跨敤鍏ㄩ儴缁嗚優锛屾暟鍊?= 闅忔満鎶藉彇
+
+  # 鈹€鈹€ 鍥惧儚杈撳嚭鍙傛暟 鈹€鈹€
+  dpi_val        <- 300
+  width_val      <- 12
+  height_val     <- 10
+
+  # 鈹€鈹€ JSON 瑕嗙洊榛樿鍊?鈹€鈹€
+  if (!is.null(json$project))     project_name    <- json$project
+  if (!is.null(json$top_n))       top_n           <- json$top_n
+  if (!is.null(json$group_by))    heatmap_group_by <- json$group_by
+  if (!is.null(json$size))        font_size       <- json$size
+  if (!is.null(json$angle))       font_angle      <- json$angle
+  if (!is.null(json$raster))      raster_val      <- json$raster
+  if (!is.null(json$disp_min))    disp_min        <- json$disp_min
+  if (!is.null(json$disp_max))    disp_max        <- json$disp_max
+  if (!is.null(json$draw_lines))  draw_lines_val  <- json$draw_lines
+  if (!is.null(json$lines_width)) lines_width     <- json$lines_width
+  if (!is.null(json$group_bar))   group_bar_val   <- json$group_bar
+  if (!is.null(json$sample_n))    sample_n_val    <- json$sample_n
+  if (!is.null(json$dpi))         dpi_val         <- json$dpi
+  if (!is.null(json$width))       width_val       <- json$width
+  if (!is.null(json$height))      height_val      <- json$height
+
+  dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+
+  # 鈹€鈹€ 鏃ュ織绯荤粺 鈹€鈹€
+  log_path <- file.path(output_dir, paste0(project_name, "_heatmap.log"))
+  log_con  <- file(log_path, open = "wt")
+  sink(log_con, append = TRUE, split = TRUE)
+  log_msg <- function(...) {
+    cat(paste0("[", Sys.time(), "] "), ..., "\n", sep = "")
+  }
+
+  log_msg("鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲 鏍囪鍩哄洜鐑浘寮€濮?鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲")
+  log_msg("椤圭洰:", project_name)
+
+
+  # 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?  #  Step 1: 璇诲彇 Seurat 瀵硅薄 + 鏍囪鍩哄洜琛?  # 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?  log_msg("")
+  log_msg("鈹€鈹€ Step 1: 璇诲彇鏁版嵁 鈹€鈹€")
+
+  object_json_path <- file.path(input_dir, "seuratobject.json")
+  if (!file.exists(object_json_path)) {
+    log_msg("  閿欒: 鎵句笉鍒?, object_json_path)
+    sink()
+    close(log_con)
+    return(list(status = "error", message = paste("缁嗚優娉ㄩ噴绱㈠紩鏂囦欢涓嶅瓨鍦?", object_json_path)))
+  }
+
+  obj_info <- jsonlite::fromJSON(object_json_path, simplifyVector = FALSE)
+  rds_path <- obj_info$latest_rds_path
+  log_msg("  鍔犺浇 rds:", rds_path)
+
+  seurat_obj <- readRDS(rds_path)
+  log_msg("  缁嗚優鏁?", ncol(seurat_obj))
+
+  # 璇诲彇鏍囪鍩哄洜 CSV锛堢敱 04_cell_annotation.R 鐢熸垚锛?  marker_csv_path <- file.path(input_dir, paste0(project_name, "_cluster_markers.csv"))
+  if (!file.exists(marker_csv_path)) {
+    marker_csv_path <- file.path("/workspace/data/cell_annotation",
+                                 paste0(project_name, "_cluster_markers.csv"))
+  }
+  if (!file.exists(marker_csv_path)) {
+    log_msg("  閿欒: 鎵句笉鍒?cluster_markers.csv")
+    sink()
+    close(log_con)
+    return(list(status = "error", message = "cluster_markers.csv 涓嶅瓨鍦紝璇峰厛杩愯缁嗚優娉ㄩ噴"))
+  }
+
+  cluster_markers <- read.csv(marker_csv_path, stringsAsFactors = FALSE)
+  log_msg("  鏍囪鍩哄洜琛?", marker_csv_path)
+  log_msg("  鏍囪鍩哄洜琛屾暟:", nrow(cluster_markers))
+  log_msg("  鍒楀悕:", paste(colnames(cluster_markers), collapse = ", "))
+
+
+  # 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?  #  Step 2: 鎻愬彇 Top N 鏍囪鍩哄洜
+  # 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?  log_msg("")
+  log_msg("鈹€鈹€ Step 2: 鎻愬彇 Top", top_n, "鏍囪鍩哄洜 鈹€鈹€")
+
+  # 璇嗗埆 cluster 鍒楋紙鍙兘鏄?cluster 鎴?group锛?  cluster_col <- intersect(c("cluster", "group"), colnames(cluster_markers))[1]
+  gene_col    <- intersect(c("gene", "Gene", "gene_name"), colnames(cluster_markers))[1]
+
+  if (is.na(cluster_col) || is.na(gene_col)) {
+    log_msg("  閿欒: 鏃犳硶璇嗗埆 cluster 鎴?gene 鍒?)
+    sink()
+    close(log_con)
+    return(list(status = "error", message = "cluster_markers.csv 鏍煎紡涓嶅吋瀹?))
+  }
+
+  top_genes <- cluster_markers %>%
+    group_by(.data[[cluster_col]]) %>%
+    slice_head(n = top_n) %>%
+    pull(.data[[gene_col]]) %>%
+    unique()
+
+  log_msg("  Top", top_n, "鍩哄洜鏁?", length(top_genes))
+  log_msg("  鍩哄洜:", paste(top_genes, collapse = ", "))
+
+
+  # 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?  #  Step 3: DoHeatmap 缁樺埗
+  # 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?  log_msg("")
+  log_msg("鈹€鈹€ Step 3: DoHeatmap 缁樺埗 鈹€鈹€")
+  log_msg("  鍙傛暟: group.by   =", heatmap_group_by)
+  log_msg("  鍙傛暟: size       =", font_size)
+  log_msg("  鍙傛暟: angle      =", font_angle)
+  log_msg("  鍙傛暟: disp.min   =", disp_min, ", disp.max =", disp_max)
+  log_msg("  鍙傛暟: raster     =", raster_val)
+
+  # 濡傛灉鎸囧畾浜嗘娊鏍锋暟閲忥紝闅忔満鎶藉彇缁嗚優
+  plot_obj <- seurat_obj
+  if (!is.null(sample_n_val) && sample_n_val < ncol(seurat_obj)) {
+    sampled_cells <- sample(colnames(seurat_obj), sample_n_val)
+    plot_obj <- subset(seurat_obj, cells = sampled_cells)
+    log_msg("  闅忔満鎶芥牱缁嗚優:", sample_n_val, "/", ncol(seurat_obj))
+  }
+
+  hm_args <- list(
+    object    = plot_obj,
+    features  = top_genes,
+    group.by  = heatmap_group_by,
+    size      = font_size,
+    angle     = font_angle,
+    raster    = raster_val,
+    disp.min  = disp_min,
+    disp.max  = disp_max,
+    lines.width = lines_width,
+    group.bar   = group_bar_val,
+    draw.lines  = draw_lines_val
+  )
+
+  heatmap_p <- do.call(DoHeatmap, hm_args) +
+    scale_fill_viridis_c(option = "plasma") +
+    ggtitle(paste(project_name, "鈥?Top", top_n, "鏍囪鍩哄洜鐑浘")) +
+    theme(legend.position = "right")
+
+  heatmap_file <- file.path(output_dir, paste0(project_name, "_markers_heatmap.pdf"))
+  ggsave(heatmap_file, heatmap_p, width = width_val, height = height_val, dpi = dpi_val)
+  log_msg("  杈撳嚭鍥剧墖:", heatmap_file)
+
+
+  sink()
+  close(log_con)
+
+  return(list(
+    status          = "success",
+    message         = "鏍囪鍩哄洜鐑浘瀹屾垚",
+    project         = project_name,
+    top_n           = top_n,
+    genes_used      = top_genes,
+    heatmap_file    = heatmap_file,
+    log_path        = log_path,
+    cells           = ncol(seurat_obj)
+  ))
+}

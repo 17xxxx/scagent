@@ -191,6 +191,11 @@ run_cell_annotation <- function(...) {
   n_markers <- nrow(cluster_markers)
   log_msg("  标记基因识别完成: 共", n_markers, "个标记基因")
 
+  # 保存 cluster_markers 为 RDS（供下游脚本读取）
+  marker_rds_path <- file.path(output_dir, paste0(project_name, "_cluster_markers.rds"))
+  saveRDS(cluster_markers, marker_rds_path)
+  log_msg("  标记基因 RDS:", marker_rds_path)
+
   log_msg("  参数: only.pos =", only_pos,
           ", min.pct =", min_pct,
           ", logfc.threshold =", logfc_threshold,
@@ -201,28 +206,38 @@ run_cell_annotation <- function(...) {
   # ═══════════════════════════════════════════════════════════════════════
   #  Step 3: 标记基因结果统计 + 保存
   # ═══════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════
+  #  Step 3: 标记基因结果统计 + 保存
+  # ═══════════════════════════════════════════════════════════════════════
   log_msg("")
   log_msg("── Step 3: 标记基因统计 + 保存 ──")
 
-  # Top N 标记基因
-  top_markers <- cluster_markers[
-    order(cluster_markers$cluster, -cluster_markers$avg_log2FC),
-  ]
-  top_markers <- top_markers[!duplicated(paste(top_markers$cluster, top_markers$gene)), ]
-  top_list <- split(top_markers, top_markers$cluster)
-  top_list <- lapply(top_list, function(x) head(x, top_n_markers))
-  top_markers <- do.call(rbind, top_list)
+  # 加载 dplyr 包以使用管道操作
+  suppressPackageStartupMessages(library(dplyr))
 
-  log_msg("  各聚类 Top", top_n_markers, "标记基因:")
-  for (cl in unique(top_markers$cluster)) {
-    genes <- top_markers$gene[top_markers$cluster == cl]
-    log_msg("    Cluster", cl, ":", paste(genes, collapse = ", "))
-  }
-
-  # 保存完整标记基因表到 CSV
+  # 保存完整的标记基因表到 CSV (优先保存全集，防止后续过滤覆盖原数据)
   csv_path <- file.path(output_dir, paste0(project_name, "_cluster_markers.csv"))
   write.csv(cluster_markers, csv_path, row.names = FALSE)
   log_msg("  标记基因 CSV:", csv_path)
+
+  # 筛选显著性并提取 Top N 标记基因
+  top_markers <- cluster_markers %>%
+    filter(p_val_adj < 0.05) %>%                                    # 1. 严格要求校正后的 p 值显著
+    group_by(cluster) %>%                                           # 2. 按聚类分组
+    slice_max(n = top_n_markers, order_by = avg_log2FC, with_ties = FALSE) %>% # 3. 提取 log2FC 最高的前 N 个
+    ungroup() %>%                                                   # 4. 解除分组
+    as.data.frame()                                                 # 转回基础数据框以防万一
+
+  # 日志输出 Top N 基因
+  log_msg("  各聚类显著 Top", top_n_markers, "标记基因:")
+  if (nrow(top_markers) > 0) {
+    for (cl in unique(top_markers$cluster)) {
+      genes <- top_markers$gene[top_markers$cluster == cl]
+      log_msg("    Cluster", cl, ":", paste(genes, collapse = ", "))
+    }
+  } else {
+    log_msg("    [警告] 未找到任何符合条件 (p_val_adj < 0.05) 的标记基因！")
+  }
 
   log_msg("  参数: top_n =", top_n_markers)
 

@@ -9,6 +9,7 @@ from .marker_viz_tool import run_marker_visualization
 from .cell_ratio_tool import run_cell_ratio_viz
 from .heatmap_tool import run_heatmap
 from .enrichment_tool import run_enrichment_analysis
+from .check_status_tool import check_pipeline_status
 
 __all__ = [
     "run_qc_for_all_samples",
@@ -20,4 +21,5 @@ __all__ = [
     "run_cell_ratio_viz",
     "run_heatmap",
     "run_enrichment_analysis",
+    "check_pipeline_status",
 ]
