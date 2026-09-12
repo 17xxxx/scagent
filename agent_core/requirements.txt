@@ -1,5 +1,31 @@
-requests
-python-dotenv
+# scAgent Python 依赖
+# ─────────────────────────────────────────────────────────────────────────────
+# 注意：本文件是「人读清单」，不是可复现的锁文件。
+# 真正用于构建的是 requirements.lock（含精确版本 + sha256 哈希）。
+#
+# 生成锁文件（需在有网机器上执行一次，见 docs/CLOUD_DEPLOY_PLAN.md Step 5）：
+#     pip install -r requirements.txt
+#     python -c "from langchain.agents import create_agent; print('ok')"   # 必须通过
+#     pip freeze > requirements.lock
+#     pip download -r requirements.lock -d vendor/wheels/linux-amd64-cp311 --only-binary=:all:
+#
+# 为什么要锁版本：agent_factory.py 用的是 langchain 1.x 的新 API
+# （langchain.agents.create_agent、langchain.agents.middleware.*），
+# 不锁版本时一次 pip install 就可能装到 API 不同的版本而直接 import 失败。
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Agent 框架 ──
 langchain
 langchain-openai
 langgraph
+
+# ── 服务化（server.py）──
+fastapi
+uvicorn[standard]
+
+# ── 会话持久化（服务重启不丢会话）──
+langgraph-checkpoint-sqlite
+
+# ── 基础 ──
+requests
+python-dotenv
