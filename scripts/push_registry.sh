@@ -116,9 +116,11 @@ ok "基础镜像已搬运"
 # ── 2. 构建 R 运行时（重型，很少变）──────────────────────────────────────────
 info "[2/5] 构建 R 运行时 $REG/bio/scagent-runtime:$RUNTIME_VER"
 info "     这一步会安装 108 个 R 包，首次约 30–90 分钟"
-docker build \
-  --build-arg PPM_CRAN="${PPM_CRAN:-https://packagemanager.posit.co/cran/__linux__/jammy/latest}" \
-  --build-arg PPM_BIOC="${PPM_BIOC:-https://packagemanager.posit.co/bioconductor/__linux__/jammy/latest}" \
+BUILD_ARGS=()
+for v in PPM_CRAN CRAN_FALLBACK BIOC_MIRROR BIOC_ANN_MIRROR BIOC_EXP_MIRROR R_BIOC_VERSION; do
+  [ -n "${!v:-}" ] && BUILD_ARGS+=(--build-arg "$v=${!v}")
+done
+docker build "${BUILD_ARGS[@]}" \
   -f seurat_backend/Dockerfile.runtime \
   -t "$REG/bio/scagent-runtime:$RUNTIME_VER" .
 docker push "$REG/bio/scagent-runtime:$RUNTIME_VER"

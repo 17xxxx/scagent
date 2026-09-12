@@ -29,29 +29,61 @@ RUN R -e "if (!requireNamespace('pak', quietly=TRUE)) \
             install.packages('pak', repos='https://cloud.r-project.org')"
 
 # ── 锁定 Bioconductor 版本（避免半年后重建得到不同版本）──────────────────────
-ENV R_BIOC_VERSION=3.22
+ARG R_BIOC_VERSION=3.22
+ENV R_BIOC_VERSION=${R_BIOC_VERSION}
 RUN R -e "if (!requireNamespace('BiocManager', quietly=TRUE)) \
             install.packages('BiocManager', repos='https://cloud.r-project.org'); \
           BiocManager::install(version=Sys.getenv('R_BIOC_VERSION'), \
                                ask=FALSE, update=FALSE)"
 
-# ── 包源：CRAN + Bioconductor 均走 Posit Package Manager（二进制，无需编译）──
-#   不再依赖 bioconductor.org —— 实测该域名可达但极不稳定（传输频繁卡死）。
-ARG PPM_CRAN="https://packagemanager.posit.co/cran/__linux__/jammy/latest"
-ARG PPM_BIOC="https://packagemanager.posit.co/bioconductor/__linux__/jammy/latest"
+# ═══════════════════════════════════════════════════════════════════════════════
+#  包源配置
+#
+#  ⚠️ 历史踩坑：曾把 Bioconductor 源写成
+#       https://packagemanager.posit.co/bioconductor/__linux__/jammy/latest
+#     该路径在 PPM 上**全部 404**（PPM 不提供这个格式的 Bioconductor 镜像），
+#     导致 pak 无法解析 bioc 包、构建在 pkg_install 处失败。
+#     现已改为「先探测、再选用」的多源回退策略（scripts/install_r_deps.R）。
+#
+#  候选源（实测结论）：
+#    CRAN   : PPM 的 Linux 二进制源最快（无需编译），但可能不稳定 → 回退清华源
+#    Bioc   : bioconductor.org 国内不稳定；西湖大学镜像三个子仓实测均 200 → 优先
+#
+#  需要换成内网镜像时，用 --build-arg 覆盖即可，无需改本文件。
+# ═══════════════════════════════════════════════════════════════════════════════
 
-# ── 安装清单：只声明 17 个「直接依赖」，其余交给依赖求解器 ─────────────────────
-#   实测 108 个包的完整闭包由下列 17 个推导而来（见 docs/TARGET_STATE_REVIEW.md §4.3）。
-#   手工声明传递依赖只会扩大构建失败面，因此明确不写。
-#   注意：原清单中的 bioc::scrapper 无任何脚本使用，已移除（VENDORING_AUDIT §3.5 前身 B1）。
+# CRAN：优先 PPM 二进制（快），回退清华源（稳）
+ARG PPM_CRAN="https://packagemanager.posit.co/cran/__linux__/jammy/latest"
+ARG CRAN_FALLBACK="https://mirrors.tuna.tsinghua.edu.cn/CRAN"
+
+# Bioconductor 软件仓
+ARG BIOC_MIRROR="https://mirrors.westlake.edu.cn/bioconductor/packages/3.22/bioc"
+ARG BIOC_FALLBACK="https://bioconductor.org/packages/3.22/bioc"
+
+# Bioconductor 注释仓（GO.db / org.Mm.eg.db / org.Hs.eg.db 在这里，不在软件仓）
+ARG BIOC_ANN_MIRROR="https://mirrors.westlake.edu.cn/bioconductor/packages/3.22/data/annotation"
+ARG BIOC_ANN_FALLBACK="https://bioconductor.org/packages/3.22/data/annotation"
+
+# Bioconductor 实验数据仓（可选）
+ARG BIOC_EXP_MIRROR="https://mirrors.westlake.edu.cn/bioconductor/packages/3.22/data/experiment"
+ARG BIOC_EXP_FALLBACK="https://bioconductor.org/packages/3.22/data/experiment"
+
+# ARG 只是构建期变量；用 ENV 固化才能被 R 的 Sys.getenv() 读到
+ENV PPM_CRAN=${PPM_CRAN} \
+    CRAN_FALLBACK=${CRAN_FALLBACK} \
+    BIOC_MIRROR=${BIOC_MIRROR} \
+    BIOC_FALLBACK=${BIOC_FALLBACK} \
+    BIOC_ANN_MIRROR=${BIOC_ANN_MIRROR} \
+    BIOC_ANN_FALLBACK=${BIOC_ANN_FALLBACK} \
+    BIOC_EXP_MIRROR=${BIOC_EXP_MIRROR} \
+    BIOC_EXP_FALLBACK=${BIOC_EXP_FALLBACK}
+
+# ── 安装 R 依赖（17 个直接依赖，其余由求解器处理）──────────────────────────────
+#   预检 + 多源回退 + 失败时指明具体 URL，避免"跑到一半才失败且看不出原因"。
+#   scripts/ 不在应用层"运行期禁止装包"断言的扫描范围内（该断言只扫 seurat_backend/*.R）。
+COPY scripts/install_r_deps.R /tmp/install_r_deps.R
 RUN --mount=type=cache,target=/root/.cache/R/pkgcache \
-    R -e "pak::pkg_install(c( \
-        'plumber', 'Seurat', 'jsonlite', 'patchwork', 'harmony', \
-        'bioc::SingleR', 'bioc::celldex', 'bioc::clusterProfiler', 'bioc::enrichplot', \
-        'bioc::GOSemSim', 'bioc::DOSE', 'bioc::fgsea', 'bioc::GO.db', \
-        'bioc::org.Mm.eg.db', 'bioc::org.Hs.eg.db', 'bioc::ensembldb', \
-        'bioc::rtracklayer' \
-      ), repos = c(CRAN = Sys.getenv('PPM_CRAN'), BioCsoft = Sys.getenv('PPM_BIOC')))"
+    Rscript /tmp/install_r_deps.R
 
 # ── presto：本地 zip 安装（不在 CRAN/Bioc 上）─────────────────────────────────
 COPY shared_data/presto-master.zip /tmp/presto-master.zip

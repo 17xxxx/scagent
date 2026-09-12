@@ -28,14 +28,22 @@ die()  { printf '  %s\n' "${C_R}❌${C_0} $*" >&2; exit 1; }
 RUNTIME_IMAGE="${RUNTIME_IMAGE:-scagent-runtime:dev}"
 DO_RUNTIME=1
 DO_APP=1
+PROGRESS="auto"
 
 for arg in "$@"; do
   case "$arg" in
     --app-only)     DO_RUNTIME=0 ;;
     --runtime-only) DO_APP=0 ;;
+    --plain)        PROGRESS="plain" ;;   # 打印每一步的完整输出，排障用
     -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "未知参数: $arg" ;;
   esac
+done
+
+# 包源可由环境变量覆盖（不设则用 Dockerfile 里的默认值）
+BUILD_ARGS=()
+for v in PPM_CRAN CRAN_FALLBACK BIOC_MIRROR BIOC_ANN_MIRROR BIOC_EXP_MIRROR R_BIOC_VERSION; do
+  [ -n "${!v:-}" ] && BUILD_ARGS+=(--build-arg "$v=${!v}")
 done
 
 # ── 前置检查 ──────────────────────────────────────────────────────────────────
@@ -74,10 +82,18 @@ if [ "$DO_RUNTIME" -eq 1 ]; then
     info "[1/3] 构建 R 运行时 $RUNTIME_IMAGE"
     warn "这一步会安装 108 个 R 包，首次约 30–90 分钟，请耐心等待"
     docker build \
-      --build-arg PPM_CRAN="${PPM_CRAN:-https://packagemanager.posit.co/cran/__linux__/jammy/latest}" \
-      --build-arg PPM_BIOC="${PPM_BIOC:-https://packagemanager.posit.co/bioconductor/__linux__/jammy/latest}" \
+      --progress="$PROGRESS" \
+      "${BUILD_ARGS[@]}" \
       -f seurat_backend/Dockerfile.runtime \
-      -t "$RUNTIME_IMAGE" .
+      -t "$RUNTIME_IMAGE" . || die "runtime 构建失败。
+      排查建议：
+        1) 用 --plain 重跑以看到 R 的完整报错：
+             ./scripts/dev_build.sh --runtime-only --plain 2>&1 | tail -80
+        2) 若提示某个仓库不可达，用镜像覆盖后重试，例如：
+             BIOC_MIRROR=https://mirrors.westlake.edu.cn/bioconductor/packages/3.22/bioc \
+             BIOC_ANN_MIRROR=https://mirrors.westlake.edu.cn/bioconductor/packages/3.22/data/annotation \
+             ./scripts/dev_build.sh --runtime-only
+        3) 先验证网络：./scripts/setup-network.sh --verify"
     ok "runtime 构建完成"
   fi
 else

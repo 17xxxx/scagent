@@ -25,7 +25,14 @@ set -euo pipefail
 # ── 可调参数（均可用同名环境变量覆盖）─────────────────────────────────────────
 PPM_OS="${PPM_OS:-jammy}"                 # ubuntu 代号: jammy(22.04) / noble(24.04) / focal(20.04)
 PPM_CRAN="${PPM_CRAN:-https://packagemanager.posit.co/cran/__linux__/${PPM_OS}/latest}"
-PPM_BIOC="${PPM_BIOC:-https://packagemanager.posit.co/bioconductor/__linux__/${PPM_OS}/latest}"
+BIOC_VER="${BIOC_VER:-3.22}"              # 与 seurat_backend/Dockerfile.runtime 保持一致
+# ⚠️ 不要用 packagemanager.posit.co/bioconductor/... —— 该路径实测全部 404。
+#    这里用实测可达的西湖大学镜像（软件/注释/实验数据三个子仓均已验证）。
+BIOC_BASE="${BIOC_BASE:-https://mirrors.westlake.edu.cn/bioconductor/packages/${BIOC_VER}}"
+BIOC_MIRROR="${BIOC_MIRROR:-${BIOC_BASE}/bioc}"
+BIOC_ANN_MIRROR="${BIOC_ANN_MIRROR:-${BIOC_BASE}/data/annotation}"
+BIOC_EXP_MIRROR="${BIOC_EXP_MIRROR:-${BIOC_BASE}/data/experiment}"
+CRAN_FALLBACK="${CRAN_FALLBACK:-https://mirrors.tuna.tsinghua.edu.cn/CRAN}"
 PIP_MIRROR_URL="${PIP_MIRROR_URL:-https://mirrors.aliyun.com/pypi/simple/}"
 # 实测可用（rocker/* 与 library/* 均可取到）；顺序即优先级
 DOCKER_MIRRORS="${DOCKER_MIRRORS:-https://docker.1panel.live,https://hub.rat.dev,https://docker.1ms.run}"
@@ -231,19 +238,23 @@ PY
   local block
   block=$(cat <<EOF
 ${begin}
-# scAgent: CRAN + Bioconductor 均走 Posit Package Manager
-# 原因: bioconductor.org 可达但极不稳定（实测传输频繁卡死 25s+）
+# scAgent R 包源
+#   CRAN      : PPM 的 Linux 二进制源（免编译，快）；不可达时切 CRAN_FALLBACK
+#   Bioc*     : bioconductor.org 国内极不稳定（实测频繁卡死），改用西湖大学镜像
+#   注意      : GO.db / org.*.eg.db 属于 data/annotation，不在软件仓 —— 必须单列 BioCann
 options(
   repos = c(
-    CRAN      = "${PPM_CRAN}",
-    BioCsoft  = "${PPM_BIOC}",
-    BioCann   = "${PPM_BIOC}",
-    BioCexp   = "${PPM_BIOC}",
-    BioCworkflows = "${PPM_BIOC}"
+    CRAN          = "${PPM_CRAN}",
+    BioCsoft      = "${BIOC_MIRROR}",
+    BioCann       = "${BIOC_ANN_MIRROR}",
+    BioCexp       = "${BIOC_EXP_MIRROR}"
   ),
-  timeout = 600
+  timeout = 900,
+  Ncpus = max(1L, parallel::detectCores() - 1L)
 )
-# 大包下载重试
+# CRAN 兜底镜像（PPM 不可达时手动切换）
+#   options(repos = c(CRAN = "${CRAN_FALLBACK}", BioCsoft = "${BIOC_MIRROR}",
+#                     BioCann = "${BIOC_ANN_MIRROR}", BioCexp = "${BIOC_EXP_MIRROR}"))
 options(install.packages.check.source = "no")
 ${end}
 EOF
