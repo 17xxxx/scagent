@@ -39,44 +39,34 @@ RUN R -e "if (!requireNamespace('BiocManager', quietly=TRUE)) \
 # ═══════════════════════════════════════════════════════════════════════════════
 #  包源配置
 #
-#  ⚠️ 历史踩坑：曾把 Bioconductor 源写成
-#       https://packagemanager.posit.co/bioconductor/__linux__/jammy/latest
-#     该路径在 PPM 上**全部 404**（PPM 不提供这个格式的 Bioconductor 镜像），
-#     导致 pak 无法解析 bioc 包、构建在 pkg_install 处失败。
-#     现已改为「先探测、再选用」的多源回退策略（scripts/install_r_deps.R）。
+#  ⚠️ 历史踩坑（两条，都已修）：
+#    1. Bioconductor 源曾写成 packagemanager.posit.co/bioconductor/...
+#       —— 该路径实测**全部 404**，PPM 不提供这种格式的 Bioconductor 镜像。
+#    2. 曾写 pak::pkg_install(pkgs, repos = repos)
+#       —— **pak 的 pkg_install() 没有 repos 参数**，会报 unused argument。
+#          pak 从 options(repos) 读取仓库，必须用 options() 设置。
 #
-#  候选源（实测结论）：
-#    CRAN   : PPM 的 Linux 二进制源最快（无需编译），但可能不稳定 → 回退清华源
+#  实测结论：
+#    CRAN   : PPM 的 Linux 二进制源免编译最快，但可能不稳定 → 回退清华源
 #    Bioc   : bioconductor.org 国内不稳定；西湖大学镜像三个子仓实测均 200 → 优先
 #
-#  需要换成内网镜像时，用 --build-arg 覆盖即可，无需改本文件。
+#  BiocManager 与脚本都按 ${BIOC_ROOT}/packages/${版本}/${子仓} 拼 URL，
+#  因此只需给一个镜像根即可（已验证与 BiocManager 的拼法一致）。
+#
+#  换成内网镜像时用 --build-arg 覆盖，无需改本文件。
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # CRAN：优先 PPM 二进制（快），回退清华源（稳）
 ARG PPM_CRAN="https://packagemanager.posit.co/cran/__linux__/jammy/latest"
 ARG CRAN_FALLBACK="https://mirrors.tuna.tsinghua.edu.cn/CRAN"
 
-# Bioconductor 软件仓
-ARG BIOC_MIRROR="https://mirrors.westlake.edu.cn/bioconductor/packages/3.22/bioc"
-ARG BIOC_FALLBACK="https://bioconductor.org/packages/3.22/bioc"
-
-# Bioconductor 注释仓（GO.db / org.Mm.eg.db / org.Hs.eg.db 在这里，不在软件仓）
-ARG BIOC_ANN_MIRROR="https://mirrors.westlake.edu.cn/bioconductor/packages/3.22/data/annotation"
-ARG BIOC_ANN_FALLBACK="https://bioconductor.org/packages/3.22/data/annotation"
-
-# Bioconductor 实验数据仓（可选）
-ARG BIOC_EXP_MIRROR="https://mirrors.westlake.edu.cn/bioconductor/packages/3.22/data/experiment"
-ARG BIOC_EXP_FALLBACK="https://bioconductor.org/packages/3.22/data/experiment"
+# Bioconductor 镜像根（脚本据此派生 bioc / data/annotation / data/experiment）
+ARG BIOC_ROOT="https://mirrors.westlake.edu.cn/bioconductor"
 
 # ARG 只是构建期变量；用 ENV 固化才能被 R 的 Sys.getenv() 读到
 ENV PPM_CRAN=${PPM_CRAN} \
     CRAN_FALLBACK=${CRAN_FALLBACK} \
-    BIOC_MIRROR=${BIOC_MIRROR} \
-    BIOC_FALLBACK=${BIOC_FALLBACK} \
-    BIOC_ANN_MIRROR=${BIOC_ANN_MIRROR} \
-    BIOC_ANN_FALLBACK=${BIOC_ANN_FALLBACK} \
-    BIOC_EXP_MIRROR=${BIOC_EXP_MIRROR} \
-    BIOC_EXP_FALLBACK=${BIOC_EXP_FALLBACK}
+    BIOC_ROOT=${BIOC_ROOT}
 
 # ── 安装 R 依赖（17 个直接依赖，其余由求解器处理）──────────────────────────────
 #   预检 + 多源回退 + 失败时指明具体 URL，避免"跑到一半才失败且看不出原因"。

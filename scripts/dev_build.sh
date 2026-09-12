@@ -42,7 +42,7 @@ done
 
 # 包源可由环境变量覆盖（不设则用 Dockerfile 里的默认值）
 BUILD_ARGS=()
-for v in PPM_CRAN CRAN_FALLBACK BIOC_MIRROR BIOC_ANN_MIRROR BIOC_EXP_MIRROR R_BIOC_VERSION; do
+for v in PPM_CRAN CRAN_FALLBACK BIOC_ROOT R_BIOC_VERSION; do
   [ -n "${!v:-}" ] && BUILD_ARGS+=(--build-arg "$v=${!v}")
 done
 
