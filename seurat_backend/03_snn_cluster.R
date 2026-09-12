@@ -35,6 +35,21 @@ library(Seurat)
 library(ggplot2)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  载入共享配置：所有路径来自 SCAGENT_* 环境变量，不再硬编码
+# ═══════════════════════════════════════════════════════════════════════════════
+local({
+  cands <- c(
+    file.path(Sys.getenv("SCAGENT_BACKEND_DIR", "/workspace/seurat_backend"), "_config.R"),
+    file.path(getwd(), "seurat_backend", "_config.R"),
+    file.path(getwd(), "_config.R")
+  )
+  hit <- cands[file.exists(cands)]
+  if (length(hit) == 0)
+    stop("找不到 _config.R；请设置 SCAGENT_BACKEND_DIR 指向 seurat_backend 目录")
+  source(hit[[1]], local = FALSE, encoding = "UTF-8")
+})
+
 run_snn_cluster <- function(...) {
 
   # ═══════════════════════════════════════════════════════════════════════
@@ -42,8 +57,8 @@ run_snn_cluster <- function(...) {
   # ═══════════════════════════════════════════════════════════════════════
 
   # ── 输入 / 输出目录 ──
-  input_dir   <- "/workspace/data/pca_umap"
-  output_dir  <- "/workspace/data/snn_cluster"
+  input_dir   <- scagent_step_dir("pca_umap")
+  output_dir  <- scagent_step_dir("snn_cluster")
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
   # ── 项目 ──
@@ -112,15 +127,15 @@ run_snn_cluster <- function(...) {
   # ═══════════════════════════════════════════════════════════════════════
   log_msg("── Step 1: 读取 PCA/UMAP Seurat 对象 ──")
 
-  object_json_path <- file.path(input_dir, "seuratobject.json")
-  if (!file.exists(object_json_path)) {
-    log_msg("  错误: 找不到", object_json_path)
+  .idx <- scagent_read_index(input_dir, what = "PCA/UMAP")
+  if (!.idx$ok) {
+    log_msg("  错误:", .idx$message)
     close(log_con)
-    return(list(status = "error", message = paste("PCA/UMAP 对象索引文件不存在:", object_json_path)))
+    return(list(status = "error", message = .idx$message))
   }
-
-  obj_info <- jsonlite::fromJSON(object_json_path, simplifyVector = FALSE)
-  rds_path <- obj_info$latest_rds_path
+  object_json_path <- .idx$path
+  obj_info <- .idx$info
+  rds_path <- scagent_resolve_rds(obj_info, "pca_umap")
   log_msg("  读取对象索引:", object_json_path)
   log_msg("  RDS 路径:", rds_path)
 
@@ -255,7 +270,7 @@ run_snn_cluster <- function(...) {
   object_json <- file.path(output_dir, "seuratobject.json")
   object_info <- list(
     latest_rds      = basename(rds_path),
-    latest_rds_path = rds_path,
+    data_root       = scagent_data_root(),
     project         = project_name,
     created_at      = as.character(Sys.time()),
     cells           = ncol(seurat_obj),
@@ -263,7 +278,7 @@ run_snn_cluster <- function(...) {
     clusters        = as.list(cluster_table),
     reductions      = Reductions(seurat_obj)
   )
-  jsonlite::write_json(object_info, object_json, pretty = TRUE, auto_unbox = TRUE)
+  scagent_write_json(object_info, object_json)
   log_msg("  对象索引:", object_json)
 
   log_msg("")

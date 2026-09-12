@@ -28,13 +28,28 @@ library(dplyr)
 # ║              集中默认参数（小鼠物种）                                          ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  载入共享配置：所有路径来自 SCAGENT_* 环境变量，不再硬编码
+# ═══════════════════════════════════════════════════════════════════════════════
+local({
+  cands <- c(
+    file.path(Sys.getenv("SCAGENT_BACKEND_DIR", "/workspace/seurat_backend"), "_config.R"),
+    file.path(getwd(), "seurat_backend", "_config.R"),
+    file.path(getwd(), "_config.R")
+  )
+  hit <- cands[file.exists(cands)]
+  if (length(hit) == 0)
+    stop("找不到 _config.R；请设置 SCAGENT_BACKEND_DIR 指向 seurat_backend 目录")
+  source(hit[[1]], local = FALSE, encoding = "UTF-8")
+})
+
 run_cell_ratio <- function(...) {
   json <- list(...)
 
   # ── 基础参数 ──
   project_name      <- "scRNA_project"
-  input_dir         <- "/workspace/data/cell_annotation"
-  output_dir        <- "/workspace/data/cell_ratio"
+  input_dir         <- scagent_step_dir("cell_annotation")
+  output_dir        <- scagent_step_dir("cell_ratio")
 
   # ── 柱状图参数 ──
   sample_col        <- "orig.ident"
@@ -79,16 +94,16 @@ run_cell_ratio <- function(...) {
   log_msg("")
   log_msg("── Step 1: 读取 Seurat 对象 ──")
 
-  object_json_path <- file.path(input_dir, "seuratobject.json")
-  if (!file.exists(object_json_path)) {
-    log_msg("  错误: 找不到", object_json_path)
+  .idx <- scagent_read_index(input_dir, what = "细胞注释")
+  if (!.idx$ok) {
+    log_msg("  错误:", .idx$message)
     sink()
     close(log_con)
-    return(list(status = "error", message = paste("细胞注释索引文件不存在:", object_json_path)))
+    return(list(status = "error", message = .idx$message))
   }
-
-  obj_info <- jsonlite::fromJSON(object_json_path, simplifyVector = FALSE)
-  rds_path <- obj_info$latest_rds_path
+  object_json_path <- .idx$path
+  obj_info <- .idx$info
+  rds_path <- scagent_resolve_rds(obj_info, "cell_annotation")
   log_msg("  加载 rds:", rds_path)
 
   seurat_obj <- readRDS(rds_path)

@@ -67,6 +67,21 @@ library(Seurat)
 library(ggplot2)
 library(harmony)
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  载入共享配置：所有路径来自 SCAGENT_* 环境变量，不再硬编码
+# ═══════════════════════════════════════════════════════════════════════════════
+local({
+  cands <- c(
+    file.path(Sys.getenv("SCAGENT_BACKEND_DIR", "/workspace/seurat_backend"), "_config.R"),
+    file.path(getwd(), "seurat_backend", "_config.R"),
+    file.path(getwd(), "_config.R")
+  )
+  hit <- cands[file.exists(cands)]
+  if (length(hit) == 0)
+    stop("找不到 _config.R；请设置 SCAGENT_BACKEND_DIR 指向 seurat_backend 目录")
+  source(hit[[1]], local = FALSE, encoding = "UTF-8")
+})
+
 run_quality_control <- function(...) {
 
   # ═══════════════════════════════════════════════════════════════════════
@@ -74,7 +89,7 @@ run_quality_control <- function(...) {
   # ═══════════════════════════════════════════════════════════════════════
 
   # ── 输出目录 ──
-  qc_dir <- "/workspace/data/qc"
+  qc_dir <- scagent_step_dir("qc")
   dir.create(qc_dir, showWarnings = FALSE, recursive = TRUE)
 
   # ── 样本与项目 ──
@@ -504,13 +519,13 @@ run_quality_control <- function(...) {
   object_json <- file.path(qc_dir, "object.json")
   object_info <- list(
     latest_rds      = basename(rds_path),
-    latest_rds_path = rds_path,
+    data_root       = scagent_data_root(),
     project         = project_name,
     created_at      = as.character(Sys.time()),
     cells_after     = ncol(merged),
     reduction       = if (run_harmony) "harmony" else "pca"
   )
-  jsonlite::write_json(object_info, object_json, pretty = TRUE, auto_unbox = TRUE)
+  scagent_write_json(object_info, object_json)
   log_msg("  对象索引:", object_json)
 
   # 汇总各样本过滤统计

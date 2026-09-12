@@ -43,6 +43,21 @@ library(SingleR)
 library(celldex)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  载入共享配置：所有路径来自 SCAGENT_* 环境变量，不再硬编码
+# ═══════════════════════════════════════════════════════════════════════════════
+local({
+  cands <- c(
+    file.path(Sys.getenv("SCAGENT_BACKEND_DIR", "/workspace/seurat_backend"), "_config.R"),
+    file.path(getwd(), "seurat_backend", "_config.R"),
+    file.path(getwd(), "_config.R")
+  )
+  hit <- cands[file.exists(cands)]
+  if (length(hit) == 0)
+    stop("找不到 _config.R；请设置 SCAGENT_BACKEND_DIR 指向 seurat_backend 目录")
+  source(hit[[1]], local = FALSE, encoding = "UTF-8")
+})
+
 run_cell_annotation <- function(...) {
 
   # ═══════════════════════════════════════════════════════════════════════
@@ -50,8 +65,8 @@ run_cell_annotation <- function(...) {
   # ═══════════════════════════════════════════════════════════════════════
 
   # ── 输入 / 输出目录 ──
-  input_dir   <- "/workspace/data/snn_cluster"
-  output_dir  <- "/workspace/data/cell_annotation"
+  input_dir   <- scagent_step_dir("snn_cluster")
+  output_dir  <- scagent_step_dir("cell_annotation")
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
   # ── 项目 ──
@@ -132,15 +147,15 @@ run_cell_annotation <- function(...) {
   # ═══════════════════════════════════════════════════════════════════════
   log_msg("── Step 1: 读取 SNN 聚类 Seurat 对象 ──")
 
-  object_json_path <- file.path(input_dir, "seuratobject.json")
-  if (!file.exists(object_json_path)) {
-    log_msg("  错误: 找不到", object_json_path)
+  .idx <- scagent_read_index(input_dir, what = "SNN 聚类")
+  if (!.idx$ok) {
+    log_msg("  错误:", .idx$message)
     close(log_con)
-    return(list(status = "error", message = paste("SNN 聚类对象索引文件不存在:", object_json_path)))
+    return(list(status = "error", message = .idx$message))
   }
-
-  obj_info <- jsonlite::fromJSON(object_json_path, simplifyVector = FALSE)
-  rds_path <- obj_info$latest_rds_path
+  object_json_path <- .idx$path
+  obj_info <- .idx$info
+  rds_path <- scagent_resolve_rds(obj_info, "snn_cluster")
   log_msg("  读取对象索引:", object_json_path)
   log_msg("  RDS 路径:", rds_path)
 
@@ -248,14 +263,17 @@ run_cell_annotation <- function(...) {
   log_msg("")
   log_msg("── Step 4: SingleR 自动注释 ──")
 
-  # 根据物种加载参考数据集
-  if (tolower(species) == "human") {
-    ref_data <- celldex::HumanPrimaryCellAtlasData()
-    log_msg("  加载人类参考: HumanPrimaryCellAtlasData")
-  } else {
-    ref_data <- celldex::MouseRNAseqData()
-    log_msg("  加载小鼠参考: MouseRNAseqData")
-  }
+  # 根据物种从【只读数据卷】加载参考数据集
+  # ---------------------------------------------------------------------------
+  # 参考数据属于「数据」而非「软件」：不进镜像、不进 registry，也不允许联网下载。
+  # 由宿主机 scripts/download_data.sh 从对象存储下载到 /data/biodata，
+  # 再以只读方式挂载进容器（docker-compose.yml: /data/biodata:/ref:ro）。
+  # 缺失时直接报错并提示下载 —— 绝不静默回退公网，否则"零下载"无法保证。
+  # ---------------------------------------------------------------------------
+  ref_data <- scagent_load_refdata(species)
+  log_msg("  加载参考集:",
+          if (tolower(species) == "human") "HumanPrimaryCellAtlasData" else "MouseRNAseqData",
+          "  来自:", scagent_refdata_dir())
 
   # 提取 log 标准化后的表达矩阵（SingleR 推荐用 data 层）
   expr_data <- GetAssayData(seurat_obj, assay = "RNA", layer = "data")
@@ -344,7 +362,7 @@ run_cell_annotation <- function(...) {
   object_json <- file.path(output_dir, "seuratobject.json")
   object_info <- list(
     latest_rds      = basename(rds_path),
-    latest_rds_path = rds_path,
+    data_root       = scagent_data_root(),
     project         = project_name,
     created_at      = as.character(Sys.time()),
     cells           = ncol(seurat_obj),
@@ -352,7 +370,7 @@ run_cell_annotation <- function(...) {
     species         = species,
     reductions      = Reductions(seurat_obj)
   )
-  jsonlite::write_json(object_info, object_json, pretty = TRUE, auto_unbox = TRUE)
+  scagent_write_json(object_info, object_json)
   log_msg("  对象索引:", object_json)
 
   log_msg("")
