@@ -20,9 +20,11 @@ SEURAT_BASE_URL = os.getenv("SEURAT_API_BASE", "http://seurat:9000")
 class RunMarkerVizInput(BaseModel):
     """标记基因可视化参数 —— marker_genes 为必须参数"""
 
-    marker_genes: List[str] = Field(
-        ...,
-        description="【必须】需要可视化的基因名列表，如 ['CD3D','MS4A1','CD68']",
+    # 声明为 Optional 而非必填：LLM/调用方传 null 时，由函数内给出中文提示，
+    # 比 pydantic 的 "Input should be a valid list" 更可读
+    marker_genes: Optional[List[str]] = Field(
+        default=None,
+        description="需要可视化的基因名列表，如 ['CD3D','MS4A1','CD68']",
     )
     project: Optional[str] = Field(
         default="scRNA_project",
@@ -61,7 +63,7 @@ def _call_api(tool_name: str, r_params: dict) -> dict:
 
 @tool(parse_docstring=True, args_schema=RunMarkerVizInput)
 def run_marker_visualization(
-    marker_genes: List[str],
+    marker_genes: Optional[List[str]] = None,
     project: str = "scRNA_project",
     group_by: str = "cell_type",
     pt_size: float = 0.1,
@@ -80,6 +82,13 @@ def run_marker_visualization(
         pt_size: 散点大小
         ncol: 列数
     """
+    if not marker_genes:
+        return {
+            "status": "error",
+            "message": "缺少必填参数 marker_genes。请提供要可视化的基因名列表，"
+                       "例如 ['Cd3d','Cd79a','Lyz2']（小鼠）或 ['CD3D','MS4A1','LYZ']（人）。",
+        }
+
     r_params = {
         "project": project,
         "marker_genes": marker_genes,

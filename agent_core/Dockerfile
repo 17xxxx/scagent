@@ -47,6 +47,12 @@ print('依赖自检通过')" \
 
 # ── 应用代码 ──────────────────────────────────────────────────────────────────
 COPY agent_core /workspace/agent_core
+COPY scripts/check_tool_schemas.py /tmp/check_tool_schemas.py
+
+# 构建期断言：所有工具的 args_schema 必须容忍空参数与 None
+#   —— 防止"字段声明为必填 str、调用方传 None"这类错误溜到运行期
+#      （曾经导致 pipeline_cli.py status 直接抛 pydantic ValidationError）
+RUN python /tmp/check_tool_schemas.py
 
 # ── 非 root 运行 ──────────────────────────────────────────────────────────────
 RUN useradd -m -u 1000 scagent \

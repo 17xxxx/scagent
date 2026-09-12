@@ -18,8 +18,13 @@ from typing import Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool
 
-# 数据根目录（容器内默认 /workspace/data；可用环境变量覆盖）
-DATA_DIR = os.getenv("SCAGENT_DATA_DIR", "/workspace/data")
+def _data_dir() -> str:
+    """数据根目录。
+
+    在**调用时**读取环境变量，而不是 import 时固化成常量 ——
+    否则 pipeline_cli.py 的 --data-dir 与服务端多租户切换都不会生效。
+    """
+    return os.getenv("SCAGENT_DATA_DIR", "/workspace/data")
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
@@ -130,14 +135,19 @@ def _render(project: str, data_dir: str, results: Dict[int, Tuple[str, str]]) ->
 class CheckStatusInput(BaseModel):
     """进度查询参数 —— 所有字段均为可选"""
 
-    project: str = Field(default="scRNA_project", description="项目名称")
-    data_dir: str = Field(default=DATA_DIR, description="数据根目录")
+    project: Optional[str] = Field(default=None, description="项目名称")
+    # Optional 且默认 None：调用方（如 pipeline_cli）可能显式传 None，
+    # 若声明为必填 str 会触发 pydantic ValidationError
+    data_dir: Optional[str] = Field(
+        default=None,
+        description="数据根目录；不传则读 SCAGENT_DATA_DIR 环境变量",
+    )
 
 
 @tool(parse_docstring=True, args_schema=CheckStatusInput)
 def check_pipeline_status(
-    project: str = "scRNA_project",
-    data_dir: str = DATA_DIR,
+    project: Optional[str] = None,
+    data_dir: Optional[str] = None,
 ) -> str:
     """查询单细胞分析流水线的当前进度和下一步建议。
 
@@ -151,5 +161,8 @@ def check_pipeline_status(
         project: 项目名称
         data_dir: 数据根目录（默认取 SCAGENT_DATA_DIR 环境变量）
     """
+    # 调用时解析：显式传参 > 环境变量 > 默认值
+    project = project or "scRNA_project"
+    data_dir = data_dir or _data_dir()
     results = {step[0]: _check_step(step, data_dir) for step in STEPS}
     return _render(project, data_dir, results)

@@ -20,9 +20,10 @@ SEURAT_BASE_URL = os.getenv("SEURAT_API_BASE", "http://seurat:9000")
 class RunEnrichmentInput(BaseModel):
     """功能富集参数 —— cell_group_names 为必须参数"""
 
-    cell_group_names: List[str] = Field(
-        ...,
-        description="【必须】目标细胞类型名称列表，如 ['T_cells', 'B_cells']",
+    # 同 marker_genes：改为 Optional + 函数内中文校验
+    cell_group_names: Optional[List[str]] = Field(
+        default=None,
+        description="目标细胞类型名称列表，如 ['Monocytes', 'NK cells']",
     )
     project: Optional[str] = Field(
         default="scRNA_project",
@@ -65,7 +66,7 @@ def _call_api(tool_name: str, r_params: dict) -> dict:
 
 @tool(parse_docstring=True, args_schema=RunEnrichmentInput)
 def run_enrichment_analysis(
-    cell_group_names: List[str],
+    cell_group_names: Optional[List[str]] = None,
     project: str = "scRNA_project",
     species: str = "mouse",
     ont: str = "BP",
@@ -89,6 +90,14 @@ def run_enrichment_analysis(
         qvalue_cutoff: q 值阈值
         show_category: 展示通路数
     """
+    if not cell_group_names:
+        return {
+            "status": "error",
+            "message": "缺少必填参数 cell_group_names。请提供要做 GO 富集的细胞类型名列表，"
+                       "可先调用 check_pipeline_status 或查看注释结果获取准确名称，"
+                       "例如 ['Monocytes','NK cells','T cells']。",
+        }
+
     r_params = {
         "project": project,
         "cell_group_names": cell_group_names,

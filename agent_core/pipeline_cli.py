@@ -55,8 +55,14 @@ VIZ = {
 
 
 def _call(tool, params: Dict[str, Any]) -> Any:
-    """调用 LangChain 工具（走 pydantic 校验）。"""
-    return tool.invoke(params)
+    """调用 LangChain 工具（走 pydantic 校验）。
+
+    统一丢弃值为 None 的键：工具的 args_schema 里字段可能是必填类型，
+    显式传 None 会让 pydantic 抛 ValidationError（而不是回落到默认值）。
+    这里集中兜住，避免每个调用点各自判断。
+    """
+    clean = {k: v for k, v in params.items() if v is not None}
+    return tool.invoke(clean)
 
 
 def _show(title: str, result: Any) -> bool:
