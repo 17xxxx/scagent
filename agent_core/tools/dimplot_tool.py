@@ -34,8 +34,9 @@ class RunDimplotInput(BaseModel):
         description="分组着色列，默认 [orig.ident, cell_type]",
     )
     split_by: Optional[str] = Field(
-        default="orig.ident",
-        description="按该列拆分子图，如 orig.ident，默认拆分",
+        default=None,
+        description="按该列拆分子图（如 orig.ident）。默认 None = 不拆分，"
+                    "与 R 端 05_dimplot.R 的默认值保持一致",
     )
     pt_size: Optional[float] = Field(
         default=0.3,
