@@ -26,16 +26,32 @@ COPY vendor/wheels/linux-amd64-cp311 /vendor/wheels
 COPY agent_core/requirements.txt     /tmp/requirements.txt
 COPY agent_core/requirements.lock    /tmp/requirements.lock
 
-RUN if grep -q "PLACEHOLDER" /tmp/requirements.lock; then \
-      echo "⚠️  requirements.lock 仍是占位文件 —— 回退到联网安装（首次构建专用）"; \
-      echo "    建议尽快执行 Step 5 生成真实锁文件，之后构建将完全离线。"; \
+# 三种状态，按"锁文件是否存在"与"wheelhouse 是否可用"分开判断：
+#   ① 占位锁文件            → 联网装 requirements.txt   【版本不固定，最差】
+#   ② 有锁 + 有 wheelhouse  → 离线安装                  【最佳：不联网 + 版本固定 + 可校验哈希】
+#   ③ 有锁 + 无 wheelhouse  → 联网装【锁定版本】        【版本固定，但构建机需 PyPI】
+# 说明：③ 的存在很重要 —— 它让"版本固定"不必先有 wheelhouse。
+#       运行期与这三者都无关：包已在镜像层里，服务器不需要任何 Python 网络。
+RUN set -e; \
+    if grep -q "PLACEHOLDER" /tmp/requirements.lock; then \
+      echo "⚠️  占位锁文件 → 联网安装 requirements.txt（版本不固定）"; \
       pip install -r /tmp/requirements.txt; \
+    elif ls /vendor/wheels/*.whl >/dev/null 2>&1; then \
+      if grep -q -- "--hash=" /tmp/requirements.lock; then \
+        echo "✅ 离线安装：wheelhouse + 锁文件 + 哈希校验"; \
+        pip install --no-index --find-links=/vendor/wheels \
+                    --require-hashes -r /tmp/requirements.lock; \
+      else \
+        echo "✅ 离线安装：wheelhouse + 锁文件（锁文件无哈希，跳过哈希校验）"; \
+        pip install --no-index --find-links=/vendor/wheels \
+                    -r /tmp/requirements.lock; \
+      fi; \
     else \
-      echo "✅ 离线安装模式：仅使用 /vendor/wheels，并强制校验哈希"; \
-      pip install --no-index --find-links=/vendor/wheels \
-                  --require-hashes -r /tmp/requirements.lock; \
-    fi \
- && rm -f /tmp/requirements.txt /tmp/requirements.lock
+      echo "⚙️  有锁文件但无 wheelhouse → 联网安装【锁定版本】"; \
+      echo "    构建机需要 PyPI；这不影响服务器运行（包已在镜像内）"; \
+      pip install -r /tmp/requirements.lock; \
+    fi; \
+    rm -f /tmp/requirements.txt /tmp/requirements.lock
 
 # 依赖自检：确认关键 API 真的可用（版本不匹配时在这里失败，而不是运行期）
 RUN python -c "from langchain.agents import create_agent; \
