@@ -78,6 +78,11 @@ services:
     depends_on:
       - seurat
     command: sleep infinity
+    # 开发态容器常驻 sleep，并不会监听 8080（server.py 由 docker exec 手动启动），
+    # 因此镜像里那个探 8080 的健康检查在这里必然失败、显示 unhealthy —— 纯属误报。
+    # 显式禁用，避免掩盖真正的异常。
+    healthcheck:
+      disable: true
 
 # ── 密钥来源：文件位于项目目录之外，不会随 ..:/workspace 进入容器 ─────────────
 #    初始化： ./scripts/setup_secrets.sh
