@@ -1,18 +1,31 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 #  .pre-commit-config.yaml —— 提交前拦截密钥与超大文件
 #
-#  安装（一次性）：
-#      pip install pre-commit
-#      pre-commit install
+#  安装（一次性，推荐用 uv tool —— 隔离环境，不污染任何 venv）：
+#      uv tool install pre-commit      # 可执行文件落到 ~/.local/bin
+#      pre-commit install              # 在 .git/hooks/ 里装钩子
+#      pre-commit run --all-files      # 首次全量跑一遍
+#
+#    其它安装方式：
+#      sudo apt install pipx && pipx install pre-commit
+#      /usr/bin/pip3 install --user pre-commit
+#    ⚠️ 不要用 `pip install`：本机 PATH 上的 python3 可能是别的项目的 venv。
 #
 #  为什么需要：
 #    · 本项目历史上曾在 git 历史里留下过真实 API Key（教程 notebook 中，
-#      见 docs/CLOUD_DEPLOY_PLAN.md 的 H9）。之后虽然加了 .gitignore，
-#      但 .gitignore 只防「已知文件名」，防不住「新文件里粘贴了密钥」。
+#      见 docs/CLOUD_DEPLOY_PLAN.md 的 H9）。.gitignore 只防「已知文件名」，
+#      防不住「新文件里粘贴了密钥」。
 #    · 镜像 tar 有 4–8 GB，误提交一次就很难清理。
-#
-#  手动全量扫描： pre-commit run --all-files
 # ═══════════════════════════════════════════════════════════════════════════════
+
+# ── 全局排除：第三方二进制包（无需 lint，且体积大、扫描慢）─────────────────────
+#  shared_data/ 里的 R 包 tar.gz 是【有意入库】的离线依赖（最大 100 MB），
+#  若不排除，check-added-large-files 会在首次 --all-files 时全部报违规。
+exclude: |
+  (?x)^(
+      shared_data/.*\.(tar\.gz|tgz|zip)|
+      vendor/.*\.(tar\.gz|tgz|zip|whl)
+  )$
 
 repos:
   # ── 密钥扫描（最重要）──────────────────────────────────────────────────────
@@ -28,11 +41,13 @@ repos:
       # 私钥文件（*.pem / *.key / id_rsa 等）
       - id: detect-private-key
       # 拦截超大文件：镜像 tar 有 4–8 GB，绝不能进仓库
+      #   阈值 2 MB —— shared_data 的大包已由上面的全局 exclude 放行，
+      #   因此这里保持严格，任何意外的大二进制都会在这里被拦下。
       - id: check-added-large-files
         args: ["--maxkb=2048"]
       # 合并冲突残留
       - id: check-merge-conflict
-      # .env 等敏感文件若被显式加入，这里会拦下（配合 .gitignore 双保险）
+      # 文件名大小写冲突（Linux/macOS 之间迁移时常见）
       - id: check-case-conflict
 
 # 说明：刻意不启用 end-of-file-fixer / trailing-whitespace，
