@@ -18,6 +18,7 @@
 #      ./scripts/setup_secrets.sh --from FILE        # 从别的 env 文件读取
 #      ./scripts/setup_secrets.sh --force            # 覆盖已存在的密钥
 #      ./scripts/setup_secrets.sh --check            # 只检查现状，不写文件
+#      ./scripts/setup_secrets.sh --sanitize         # 清理项目内 .env 里的活密钥
 # ═══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -34,6 +35,7 @@ TARGET="${HOME}/.config/scagent"
 FROM_FILE="$ROOT/.env"
 FORCE=0
 CHECK_ONLY=0
+SANITIZE=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -41,6 +43,7 @@ while [ $# -gt 0 ]; do
     --from)   shift; FROM_FILE="${1:?--from 需要文件}" ;;
     --force)  FORCE=1 ;;
     --check)  CHECK_ONLY=1 ;;
+    --sanitize) SANITIZE=1 ;;
     -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "未知参数: $1" ;;
   esac
@@ -86,6 +89,39 @@ read_env() {   # read_env <变量名> <文件>
     | tail -1 | tr -d '\r' | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"
 }
 
+# ── 项目内活密钥检测 / 清理 ────────────────────────────────────────────────────
+#  为什么必须做：项目根会被 compose 的 `..:/workspace` 整个挂进容器。
+#  迁移到 secrets 后若 .env 里的真密钥还在，secrets 的安全收益就归零了 ——
+#  容器内任何进程仍能读到 /workspace/.env。
+live_key_files() {
+  local f
+  for f in "$ROOT/.env" "$ROOT"/.env.*; do
+    [ -f "$f" ] || continue
+    case "$f" in *.sample|*.bak|*.orig) continue ;; esac
+    grep -qE 'sk-[A-Za-z0-9]{20,}' "$f" 2>/dev/null && printf '%s\n' "$f"
+  done
+}
+
+sanitize_file() {   # sanitize_file <env文件>
+  local f="$1" tmp
+  [ -f "$f" ] || return 0
+  tmp="$(mktemp "${f}.XXXXXX")" || { warn "无法在 $f 旁创建临时文件"; return 1; }
+  chmod 600 "$tmp" 2>/dev/null || true
+  # 把 DEEPSEEK_API_KEY=... 与 SCAGENT_TOKEN=... 的值清空，保留键名
+  sed -E -e 's|^([[:space:]]*DEEPSEEK_API_KEY[[:space:]]*=).*$|\1|' \
+         -e 's|^([[:space:]]*SCAGENT_TOKEN[[:space:]]*=).*$|\1|' "$f" > "$tmp"
+  {
+    printf '# %s 已将密钥迁移到 Docker secrets（scripts/setup_secrets.sh）\n' "$(date +%F)"
+    printf '# 真密钥不再保存在项目内，以免随 ..:/workspace 挂载进入容器。\n'
+    printf '# 如需切回环境变量方式，请重新填入并删除上面的说明。\n'
+    cat "$tmp"
+  } > "${tmp}.new" && mv "${tmp}.new" "$tmp"
+  chmod 600 "$tmp"
+  mv "$tmp" "$f"
+  chmod 600 "$f"
+  ok "已清理 $f 中的密钥值"
+}
+
 if [ "$CHECK_ONLY" -eq 1 ]; then
   info "现状检查"
   for f in "$KEY_FILE" "$TOKEN_FILE"; do
@@ -100,6 +136,29 @@ if [ "$CHECK_ONLY" -eq 1 ]; then
   done
   dperms=$(stat -c '%a' "$TARGET" 2>/dev/null || echo '?')
   ok "目录权限 $dperms"
+
+  echo
+  mapfile -t _files < <(live_key_files)
+  if [ "${#_files[@]}" -eq 0 ]; then
+    ok "项目内无活密钥残留"
+  else
+    warn "项目内仍有活密钥： ${_files[*]}"
+    printf '      这些文件会随 ..:/workspace 挂进容器，使 secrets 收益归零\n'
+    printf '      修复： ./scripts/setup_secrets.sh --sanitize\n'
+  fi
+  exit 0
+fi
+
+# ── --sanitize：只清理项目内残留，不写 secrets ────────────────────────────────
+if [ "$SANITIZE" -eq 1 ]; then
+  info "清理项目内残留密钥"
+  mapfile -t _files < <(live_key_files)
+  if [ "${#_files[@]}" -eq 0 ]; then
+    ok "项目内未发现活密钥，无需清理"
+  else
+    for f in "${_files[@]}"; do sanitize_file "$f"; done
+  fi
+  printf '\n  复查： ./scripts/check_secrets.sh\n'
   exit 0
 fi
 
@@ -117,8 +176,11 @@ if [ -z "$api_key" ]; then
 fi
 if [ -z "$api_key" ]; then
   if [ -t 0 ]; then
-    printf '  未找到 LLM API Key。请粘贴（到 https://platform.deepseek.com/api_keys 创建）：\n  > '
-    read -r api_key
+    printf '  未找到 LLM API Key。请粘贴（不回显，粘贴后回车）：\n  > '
+    # -s 不回显，避免密钥留在终端回滚缓冲/肩窥；shebang 已是 bash，故可用
+    # 刻意【不加】IFS=：默认行为会去掉首尾空白，恰好容错"多粘了一个空格"
+    read -rs api_key
+    printf '\n' 
   fi
 fi
 [ -n "$api_key" ] || die "没有可用的 API Key。
@@ -174,6 +236,25 @@ else
   printf '%s' "$token" > "$TOKEN_FILE"
   chmod 600 "$TOKEN_FILE"
   ok "$TOKEN_FILE  (600)"
+fi
+
+# ── 迁移后：清理项目内残留（否则 secrets 收益归零）──────────────────────────
+mapfile -t _leaks < <(live_key_files)
+if [ "${#_leaks[@]}" -gt 0 ]; then
+  printf '\n'
+  warn "检测到项目内仍有活密钥： ${_leaks[*]}"
+  printf '      这些文件会随 `..:/workspace` 挂进容器，使 Docker secrets 的安全收益归零。\n'
+  _do_sanitize=0
+  if [ -t 0 ]; then
+    printf '      现在清理吗（清空值、保留键名）？[Y/n] '
+    read -r _ans
+    case "$_ans" in ''|y|Y|yes|YES) _do_sanitize=1 ;; esac
+  fi
+  if [ "$_do_sanitize" -eq 1 ]; then
+    for _f in "${_leaks[@]}"; do sanitize_file "$_f"; done
+  else
+    printf '      稍后清理： ./scripts/setup_secrets.sh --sanitize\n'
+  fi
 fi
 
 # ── 提示下一步 ────────────────────────────────────────────────────────────────

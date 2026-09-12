@@ -27,6 +27,12 @@ printf '%s\n\n' "═════════════════════
 # ── 配置 ──────────────────────────────────────────────────────────────────────
 if [ -f deploy/.env ]; then
   set -a; . deploy/.env; set +a
+  # 若走 Docker secrets，deploy/.env 里没有 SCAGENT_TOKEN，从宿主侧文件补上
+  if [ -z "${SCAGENT_TOKEN:-}" ]; then
+    _sd="${SCAGENT_SECRETS_DIR:-./secrets}"
+    case "$_sd" in /*) ;; *) _sd="$ROOT/${_sd#./}" ;; esac
+    [ -f "$_sd/scagent_token" ] && SCAGENT_TOKEN="$(cat "$_sd/scagent_token")"
+  fi
   item "配置文件 deploy/.env"
   pass "已加载"
   perms=$(stat -c '%a' deploy/.env 2>/dev/null || echo "?")

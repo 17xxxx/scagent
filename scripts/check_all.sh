@@ -29,7 +29,7 @@ printf '%s\n' "  scAgent 静态自检"
 printf '%s\n' "════════════════════════════════════════════════════════════"
 
 # ── 1. Python 语法 ────────────────────────────────────────────────────────────
-step "[1/8] Python 语法"
+step "[1/9] Python 语法"
 pyfail=0
 for f in agent_core/*.py agent_core/tools/*.py client/*.py scripts/*.py; do
   python3 -m py_compile "$f" 2>/dev/null || { bad "$f"; pyfail=1; }
@@ -37,7 +37,7 @@ done
 [ $pyfail -eq 0 ] && ok "全部通过（$(ls agent_core/*.py agent_core/tools/*.py client/*.py scripts/*.py | wc -l) 个文件）"
 
 # ── 2. Shell 语法 ─────────────────────────────────────────────────────────────
-step "[2/8] Shell 语法"
+step "[2/9] Shell 语法"
 shfail=0
 for f in scripts/*.sh deploy/*.sh; do
   bash -n "$f" 2>/dev/null || { bad "$f"; shfail=1; }
@@ -45,7 +45,7 @@ done
 [ $shfail -eq 0 ] && ok "全部通过（$(ls scripts/*.sh deploy/*.sh | wc -l) 个文件）"
 
 # ── 3. Python↔R 参数契约 ──────────────────────────────────────────────────────
-step "[3/8] Python → R 参数契约"
+step "[3/9] Python → R 参数契约"
 out=$(python3 scripts/check_param_contract.py 2>&1)
 if printf '%s' "$out" | grep -q "契约校验未通过"; then
   bad "参数契约偏离快照（若确为有意改动，执行 --accept 后提交）："
@@ -58,7 +58,7 @@ if [ "$QUICK" -eq 0 ]; then
 fi
 
 # ── 4. 工具 schema（空参 / None 容忍）─────────────────────────────────────────
-step "[4/8] 工具 args_schema 容忍度"
+step "[4/9] 工具 args_schema 容忍度"
 if python3 -c "import langchain" 2>/dev/null; then
   python3 scripts/check_tool_schemas.py >/dev/null 2>&1 \
     && ok "空参数与 None 均可通过校验" || bad "存在必填字段，运行期会崩"
@@ -67,12 +67,12 @@ else
 fi
 
 # ── 5. TOOLS_HELP 与代码一致 ──────────────────────────────────────────────────
-step "[5/8] TOOLS_HELP.txt 一致性"
+step "[5/9] TOOLS_HELP.txt 一致性"
 python3 scripts/gen_tools_help.py --check >/dev/null 2>&1 \
   && ok "与代码一致" || bad "已过期，请运行 python3 scripts/gen_tools_help.py"
 
 # ── 6. R 脚本运行期禁止装包 ───────────────────────────────────────────────────
-step "[6/8] R 步骤脚本无运行期装包"
+step "[6/9] R 步骤脚本无运行期装包"
 if grep -rnE "install\.packages|BiocManager::install|pak::pkg_install|remotes::install" \
      seurat_backend/*.R >/dev/null 2>&1; then
   bad "发现运行期装包调用（会破坏离线保证）"
@@ -83,7 +83,7 @@ else
 fi
 
 # ── 7. 硬编码路径与已知错误地址 ───────────────────────────────────────────────
-step "[7/8] 硬编码路径 / 已知错误地址"
+step "[7/9] 硬编码路径 / 已知错误地址"
 hard=$(grep -rn '"/workspace\|"/data/' --include=*.R --include=*.py . 2>/dev/null \
        | grep -vE 'Sys\.getenv|os\.getenv|_get\(|# |_config\.R:' | grep -v '^\./\.git')
 if [ -n "$hard" ]; then
@@ -102,7 +102,7 @@ else
 fi
 
 # ── 8. 密钥不外泄 ─────────────────────────────────────────────────────────────
-step "[8/8] 密钥泄漏"
+step "[8/9] 密钥泄漏"
 if git ls-files -z 2>/dev/null | xargs -0 grep -lE 'sk-[A-Za-z0-9_-]{20,}' 2>/dev/null | head -3 | grep -q .; then
   bad "追踪文件中检出疑似 API Key"
 else
@@ -110,6 +110,21 @@ else
 fi
 git ls-files --error-unmatch .env >/dev/null 2>&1 \
   && bad ".env 被 git 追踪了！" || ok ".env 未被追踪"
+
+# ── 9. 工作区（含 gitignored）是否残留活密钥 ──────────────────────────────────
+#  为什么单列一步：第 8 步只扫【被追踪】文件，而 .env 是 gitignored —— 扫不到。
+#  但开发编排会把整个项目目录挂进容器（..:/workspace），
+#  所以 .env 里的活密钥会让 Docker secrets 的收益归零，且无人察觉。
+step "[9/9] 工作区活密钥（含被 gitignore 的文件）"
+leaks=$(find . -maxdepth 2 -type f -name '.env*' ! -name '*.sample' ! -name '*.bak' 2>/dev/null \
+        | xargs -r grep -lE 'sk-[A-Za-z0-9]{20,}' 2>/dev/null | head -5)
+if [ -n "$leaks" ]; then
+  bad "发现活密钥（会随挂载进入容器）："
+  printf '%s\n' "$leaks" | sed 's/^/      /'
+  printf '      修复： ./scripts/setup_secrets.sh --sanitize\n'
+else
+  ok "无（.env 已清理或仅含占位符）"
+fi
 
 # ── 汇总 ──────────────────────────────────────────────────────────────────────
 printf '\n%s\n' "────────────────────────────────────────────────────────────"

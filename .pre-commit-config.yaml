@@ -1,0 +1,40 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  .pre-commit-config.yaml —— 提交前拦截密钥与超大文件
+#
+#  安装（一次性）：
+#      pip install pre-commit
+#      pre-commit install
+#
+#  为什么需要：
+#    · 本项目历史上曾在 git 历史里留下过真实 API Key（教程 notebook 中，
+#      见 docs/CLOUD_DEPLOY_PLAN.md 的 H9）。之后虽然加了 .gitignore，
+#      但 .gitignore 只防「已知文件名」，防不住「新文件里粘贴了密钥」。
+#    · 镜像 tar 有 4–8 GB，误提交一次就很难清理。
+#
+#  手动全量扫描： pre-commit run --all-files
+# ═══════════════════════════════════════════════════════════════════════════════
+
+repos:
+  # ── 密钥扫描（最重要）──────────────────────────────────────────────────────
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.0
+    hooks:
+      - id: gitleaks
+
+  # ── 通用防护 ───────────────────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      # 私钥文件（*.pem / *.key / id_rsa 等）
+      - id: detect-private-key
+      # 拦截超大文件：镜像 tar 有 4–8 GB，绝不能进仓库
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]
+      # 合并冲突残留
+      - id: check-merge-conflict
+      # .env 等敏感文件若被显式加入，这里会拦下（配合 .gitignore 双保险）
+      - id: check-case-conflict
+
+# 说明：刻意不启用 end-of-file-fixer / trailing-whitespace，
+#       它们会一次性改动大量既有文件，产生难以审阅的噪声 diff。
+#       行尾问题已由 .gitattributes 统一处理。

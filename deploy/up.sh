@@ -28,7 +28,36 @@ set +a
 
 : "${SCAGENT_REGISTRY:?deploy/.env 中未设置 SCAGENT_REGISTRY}"
 : "${SCAGENT_VERSION:?deploy/.env 中未设置 SCAGENT_VERSION}"
-: "${SCAGENT_TOKEN:?deploy/.env 中未设置 SCAGENT_TOKEN}"
+
+# ── 密钥方式自动判定 ─────────────────────────────────────────────────────────
+#   优先 Docker secrets（与开发环境完全一致）；缺失时回退到 deploy/.env 环境变量。
+SECRETS_DIR_RAW="${SCAGENT_SECRETS_DIR:-./secrets}"
+case "$SECRETS_DIR_RAW" in
+  /*) SECRETS_DIR="$SECRETS_DIR_RAW" ;;
+  *)  SECRETS_DIR="$ROOT/${SECRETS_DIR_RAW#./}" ;;
+esac
+COMPOSE_FILES=(-f deploy/docker-compose.yml)
+
+if [ -f "$SECRETS_DIR/deepseek_api_key" ] && [ -f "$SECRETS_DIR/scagent_token" ]; then
+  export SCAGENT_SECRETS_DIR="$SECRETS_DIR"
+  COMPOSE_FILES+=(-f deploy/docker-compose.secrets.yml)
+  USE_SECRETS=1
+  # verify.sh 在宿主机上跑，需要宿主侧的令牌副本
+  SCAGENT_TOKEN="$(cat "$SECRETS_DIR/scagent_token")"
+  export SCAGENT_TOKEN
+else
+  USE_SECRETS=0
+  : "${SCAGENT_TOKEN:?未找到密钥。二选一：
+      · Docker secrets： 在 $SECRETS_DIR/ 下放置 deepseek_api_key 与 scagent_token
+        （推荐，与开发环境一致；可运行 ./scripts/setup_secrets.sh --target $SECRETS_DIR）
+      · 环境变量：       在 deploy/.env 中设置 SCAGENT_TOKEN}"
+fi
+
+if [ "$USE_SECRETS" -eq 1 ]; then
+  ok "密钥方式：Docker secrets（$SECRETS_DIR）"
+else
+  ok "密钥方式：环境变量（deploy/.env）"
+fi
 
 # ── 2. 公网 registry 白名单校验（防止偷偷摸公网）──────────────────────────────
 info "校验 registry 地址"
@@ -42,6 +71,20 @@ case "$SCAGENT_REGISTRY" in
   *) die "SCAGENT_REGISTRY 看起来不是合法的主机名: $SCAGENT_REGISTRY" ;;
 esac
 ok "私有 registry: $SCAGENT_REGISTRY  (版本 $SCAGENT_VERSION)"
+
+# ── 2.5 密钥可读性预检 ────────────────────────────────────────────────────────
+#  Docker Compose 的 file 型 secret 底层是 bind mount：容器能否读取由
+#  宿主机文件的【属主 + 权限 + SELinux 标签】共同决定，而 services.secrets 的
+#  uid/gid/mode 属性不被支持。这里提前检查，避免 agent 起来后才发现读不到。
+if [ -x scripts/check_secrets.sh ] || [ -f scripts/check_secrets.sh ]; then
+  info "密钥可读性预检"
+  if ! bash scripts/check_secrets.sh --prod 2>&1 | sed 's/^/  /'; then
+    warn "预检未全部通过 —— 若 agent 启动失败，请优先按上面的提示处理"
+    printf '  继续启动？[y/N] '
+    read -r _ans
+    case "$_ans" in y|Y|yes|YES) ;; *) die "已按用户要求中止" ;; esac
+  fi
+fi
 
 # ── 3. 检查 compose 文件与工作目录 ────────────────────────────────────────────
 for f in deploy/docker-compose.yml; do
@@ -79,18 +122,18 @@ for svc in scagent-runtime scagent-seurat scagent-agent; do
 done
 
 # ── 5. 拉取并启动 ─────────────────────────────────────────────────────────────
-COMPOSE="docker compose -f deploy/docker-compose.yml"
+COMPOSE=(docker compose "${COMPOSE_FILES[@]}")
 info "从私有 registry 拉取镜像（服务器唯一联网动作）"
-$COMPOSE pull
+"${COMPOSE[@]}" pull
 
 info "启动服务"
-$COMPOSE up -d
+"${COMPOSE[@]}" up -d --force-recreate
 
 info "等待健康检查通过（seurat 冷启动约需 120 秒）"
 for i in $(seq 1 60); do
-  unhealthy=$($COMPOSE ps --format json 2>/dev/null \
+  unhealthy=$("${COMPOSE[@]}" ps --format json 2>/dev/null \
     | grep -o '"Health":"[a-z]*"' | grep -cv '"healthy"' || true)
-  total=$($COMPOSE ps -q 2>/dev/null | wc -l)
+  total=$("${COMPOSE[@]}" ps -q 2>/dev/null | wc -l)
   if [ "${unhealthy:-1}" -eq 0 ] && [ "${total:-0}" -ge 2 ]; then
     ok "全部容器健康"
     break
@@ -100,7 +143,7 @@ for i in $(seq 1 60); do
 done
 printf '\n'
 
-$COMPOSE ps
+"${COMPOSE[@]}" ps
 
 # ── 6. 端到端自检 ─────────────────────────────────────────────────────────────
 info "端到端自检"

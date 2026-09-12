@@ -115,16 +115,30 @@ chmod 600 deploy/.env
 ok "deploy/.env 已存在（权限 600）"
 
 set -a; . deploy/.env; set +a
+
+# 判断密钥走 secrets 还是环境变量
+_sd="${SCAGENT_SECRETS_DIR:-./secrets}"
+case "$_sd" in /*) ;; *) _sd="$ROOT/${_sd#./}" ;; esac
+if [ -f "$_sd/deepseek_api_key" ] && [ -f "$_sd/scagent_token" ]; then
+  ok "检测到 Docker secrets：$_sd（密钥无需写进 deploy/.env）"
+  REQUIRED="SCAGENT_REGISTRY SCAGENT_VERSION"
+else
+  ok "密钥方式：环境变量（deploy/.env）"
+  REQUIRED="DEEPSEEK_API_KEY SCAGENT_TOKEN SCAGENT_REGISTRY SCAGENT_VERSION"
+fi
+
 missing=""
-for v in DEEPSEEK_API_KEY SCAGENT_TOKEN SCAGENT_REGISTRY SCAGENT_VERSION; do
+for v in $REQUIRED; do
   val="${!v:-}"
   case "$val" in
     ""|*请替换*|*example.com*|sk-请*|harbor.example.com*) missing="$missing $v" ;;
   esac
 done
 if [ -n "$missing" ]; then
-  die "deploy/.env 中以下项仍是占位符或为空：$missing
-      请编辑 deploy/.env 后再运行本脚本。"
+  die "以下必填项仍是占位符或为空：$missing
+      请编辑 deploy/.env 后再运行本脚本。
+      若想改用 Docker secrets（推荐），执行：
+          ./scripts/setup_secrets.sh --target deploy/secrets"
 fi
 ok "必填项已填写"
 

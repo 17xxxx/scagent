@@ -38,6 +38,73 @@ class SecretError(RuntimeError):
     """密钥配置错误（配了 *_FILE 却读不到）—— 应当快速失败，而不是静默回退。"""
 
 
+def _selinux_status() -> str:
+    """探测 SELinux 状态。
+
+    为什么重要：file 类型的 Docker secret 底层是 bind mount，
+    宿主机文件若标签不对（如 user_home_t）会让容器进程拿到 EPERM，
+    而 `ls -l` 看上去属主/权限完全正常 —— 极易误诊。
+    Compose 的 secrets 语法又不支持 :z/:Z（那是 volumes 的选项），
+    所以只能预先 chcon 打标签。
+    """
+    try:
+        with open("/sys/fs/selinux/enforce", "r", encoding="utf-8") as fh:
+            return "Enforcing" if fh.read().strip() == "1" else "Permissive"
+    except OSError:
+        return ""          # 无 SELinux 或未挂载 sysfs
+
+
+def _describe_secret_failure(file_var: str, path: str, exc: OSError) -> str:
+    """把"读不到密钥文件"变成可定位的诊断，而不是一句 Permission denied。"""
+    uid = os.getuid() if hasattr(os, "getuid") else "?"
+    gid = os.getgid() if hasattr(os, "getgid") else "?"
+    lines = [f"{file_var}={path} 读取失败：{exc}",
+             f"  容器内进程 UID:GID = {uid}:{gid}"]
+
+    try:
+        st = os.stat(path)
+        lines.append(f"  密钥文件 属主:属组 = {st.st_uid}:{st.st_gid}  "
+                     f"权限 = {oct(st.st_mode & 0o777)}")
+    except OSError as stat_exc:
+        lines.append(f"  （无法 stat 密钥文件：{stat_exc}）")
+
+    try:
+        dst = os.stat(os.path.dirname(path) or "/")
+        lines.append(f"  所在目录 属主:属组 = {dst.st_uid}:{dst.st_gid}  "
+                     f"权限 = {oct(dst.st_mode & 0o777)}")
+    except OSError:
+        pass
+
+    sel = _selinux_status()
+    if sel:
+        lines.append(f"  SELinux = {sel}")
+
+    lines += [
+        "  常见原因与处置（按可能性排序）：",
+        f"    1) 属主不匹配：容器以 UID {uid} 运行，而宿主机上的密钥文件属主不是它。",
+        f"       修复： sudo chown {uid}:{uid} <宿主机上的密钥文件>",
+        "       注意：Compose 的 file 型 secret 底层是 bind mount，",
+        "             services.secrets 的 uid/gid/mode 三个属性【不被支持】，",
+        "             属主完全由宿主机文件决定。",
+    ]
+    if sel == "Enforcing":
+        lines += [
+            "    2) SELinux（检测到 Enforcing）：标签不匹配会报 EPERM，"
+            "且 ls -l 看起来正常。",
+            "       修复： sudo chcon -t container_file_t <宿主机上的密钥文件>",
+        ]
+    else:
+        lines.append("    2) SELinux：未启用（已检测）")
+    lines += [
+        "    3) userns-remap / rootless Docker：容器 UID 会映射到宿主机的高位 UID，",
+        "       此时上面第 1 条里的 UID 不是宿主机上的真实 UID，",
+        "       需按映射后的 UID 设置属主。",
+        "    4) 路径写错或文件未挂载：确认 compose 的 secrets 段与 target 一致。",
+        "  自检工具： ./scripts/check_secrets.sh",
+    ]
+    return "\n".join(lines)
+
+
 def _secret(*names: str) -> Optional[str]:
     """读取密钥，支持 Docker secrets 约定。
 
@@ -60,10 +127,7 @@ def _secret(*names: str) -> Optional[str]:
                 with open(path.strip(), "r", encoding="utf-8") as fh:
                     content = fh.read().strip()
             except OSError as exc:
-                raise SecretError(
-                    f"{file_var}={path} 读取失败：{exc}"
-                    f"（请确认文件已挂载到容器内且当前用户可读）"
-                ) from exc
+                raise SecretError(_describe_secret_failure(file_var, path, exc)) from exc
             if not content:
                 raise SecretError(f"{file_var}={path} 是空文件")
             return content
