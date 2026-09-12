@@ -1,5 +1,10 @@
 # scAgent —— AI 驱动的单细胞 RNA 测序分析 Agent
 
+> ⚠️ **本 README 部分内容已过时。** 请优先阅读：
+> - `docs/CHANGELOG.md` —— 本轮改造全量记录 + 剩余待办
+> - `docs/PROD_HANDOVER.md` —— 开发 → 生产交付手册
+> - `docs/CLOUD_DEPLOY_PLAN.md` —— 架构方案
+
 scAgent 是一个双层架构的 AI 驱动 scRNA-seq 数据分析流水线，由 **Python LangChain/LangGraph AI Agent** 与 **R Seurat 生物信息学后端** 组成，两端通过 HTTP（Plumber API）通信，全程容器化运行。
 
 ## 架构概览
