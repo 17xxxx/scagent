@@ -23,7 +23,7 @@ services:
     networks:
       - core                      # core 是 internal，无默认路由
     volumes:
-      - "${SCAGENT_WORKSPACE:-./workspace}:/workspace"
+      - "${SCAGENT_WORKSPACE:-../workspace}:/workspace"
       - "${SCAGENT_BIODATA:-/data/biodata}:/ref:ro"     # ★ 参考数据：只读挂载
     environment:
       SCAGENT_DATA_DIR: /workspace/data
@@ -58,7 +58,7 @@ services:
       SCAGENT_STATE_DIR: /workspace/state
       SCAGENT_API_PORT: "8080"
     volumes:
-      - "${SCAGENT_WORKSPACE:-./workspace}:/workspace"
+      - "${SCAGENT_WORKSPACE:-../workspace}:/workspace"
     depends_on:
       seurat:
         condition: service_healthy

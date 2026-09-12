@@ -34,6 +34,16 @@ def _get_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _get_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
 @dataclass(frozen=True)
 class Settings:
     # ── LLM（唯一允许出网的外部依赖）────────────────────────────────────────
@@ -111,7 +121,7 @@ def load_settings() -> Settings:
         llm_model=_get("SCAGENT_LLM_MODEL", default_model),
         llm_base_url=base_url,
         llm_api_key=api_key,
-        llm_temperature=float(_get("SCAGENT_LLM_TEMPERATURE", "0")),
+        llm_temperature=_get_float("SCAGENT_LLM_TEMPERATURE", 0.0),
         llm_timeout=_get_int("SCAGENT_LLM_TIMEOUT", 120),
         llm_max_retries=_get_int("SCAGENT_LLM_MAX_RETRIES", 3),
 

@@ -31,7 +31,15 @@ done
 [ -f deploy/.env ] || { echo "❌ 缺少 deploy/.env" >&2; exit 1; }
 set -a; . deploy/.env; set +a
 
-WORKSPACE="${SCAGENT_WORKSPACE:-./workspace}"
+# 相对路径统一以 deploy/ 为基准（与 docker compose 的解析规则一致）
+resolve_workspace() {
+  case "$1" in
+    /*) printf '%s' "$1" ;;
+    *)  printf '%s' "$ROOT/deploy/$1" ;;
+  esac
+}
+
+WORKSPACE="$(resolve_workspace "${SCAGENT_WORKSPACE:-../workspace}")"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$OUT_DIR"
 ARCHIVE="$OUT_DIR/scagent-backup-$STAMP.tar.gz"

@@ -119,7 +119,15 @@ else
 fi
 
 # ── 数据目录 ──────────────────────────────────────────────────────────────────
-WORKSPACE="${SCAGENT_WORKSPACE:-./workspace}"
+# 相对路径统一以 deploy/ 为基准（与 docker compose 的解析规则一致）
+resolve_workspace() {
+  case "$1" in
+    /*) printf '%s' "$1" ;;
+    *)  printf '%s' "$ROOT/deploy/$1" ;;
+  esac
+}
+
+WORKSPACE="$(resolve_workspace "${SCAGENT_WORKSPACE:-../workspace}")"
 item "10X 原始数据"
 n=$(find "$WORKSPACE/data/rawdata" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l)
 [ "$n" -gt 0 ] && pass "$n 个样本目录" || warn "暂无样本（放入 $WORKSPACE/data/rawdata/<样本名>/）"

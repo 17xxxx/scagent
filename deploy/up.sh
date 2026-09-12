@@ -48,7 +48,15 @@ for f in deploy/docker-compose.yml; do
   [ -f "$f" ] || die "缺少 $f"
 done
 
-WORKSPACE="${SCAGENT_WORKSPACE:-./workspace}"
+# 相对路径统一以 deploy/ 为基准（与 docker compose 的解析规则一致）
+resolve_workspace() {
+  case "$1" in
+    /*) printf '%s' "$1" ;;
+    *)  printf '%s' "$ROOT/deploy/$1" ;;
+  esac
+}
+
+WORKSPACE="$(resolve_workspace "${SCAGENT_WORKSPACE:-../workspace}")"
 mkdir -p "$WORKSPACE/data/rawdata" "$WORKSPACE/state"
 ok "工作目录: $WORKSPACE"
 

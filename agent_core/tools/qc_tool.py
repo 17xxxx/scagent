@@ -20,8 +20,15 @@ from ._log import log_api_call
 # R 容器地址（docker-compose 内网，服务名即主机名）
 SEURAT_BASE_URL = os.getenv("SEURAT_API_BASE", "http://seurat:9000")
 
-# 原始数据根目录（容器内路径）
-RAW_DATA_DIR = "/workspace/data/rawdata"
+
+def raw_data_dir() -> str:
+    """原始数据根目录。
+
+    在**调用时**读取环境变量（而非 import 时固化），这样才能支持：
+      · pipeline_cli.py --data-dir 的临时覆盖
+      · 服务端按租户切换数据根目录
+    """
+    return os.path.join(os.getenv("SCAGENT_DATA_DIR", "/workspace/data"), "rawdata")
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
@@ -161,13 +168,17 @@ def run_qc_for_all_samples(
         percent_ribo_min: 核糖体基因比例下限 %（默认 10）
         run_harmony: 是否运行 Harmony 批次校正（默认 true）
     """
-    # 1. 扫描样本
-    samples = _scan_samples(RAW_DATA_DIR)
+    # 1. 扫描样本（调用时读取 SCAGENT_DATA_DIR，支持运行期覆盖）
+    raw_dir = raw_data_dir()
+    samples = _scan_samples(raw_dir)
 
     if not samples:
         return {
             "status": "no_data",
-            "message": f"在 {RAW_DATA_DIR} 中未找到任何 10X 数据样本",
+            "message": (f"在 {raw_dir} 中未找到任何 10X 数据样本。\n"
+                        f"请把每个样本放到 {raw_dir}/<样本名>/ 下，"
+                        f"并确保其中有 barcodes.tsv.gz / features.tsv.gz / matrix.mtx.gz"
+                        f"（文件名不要带样本名前缀）。"),
         }
 
     # 2. 构建平铺 JSON（samples dict + 全部参数），一次性发给 R
