@@ -117,7 +117,7 @@ ok "基础镜像已搬运"
 info "[2/5] 构建 R 运行时 $REG/bio/scagent-runtime:$RUNTIME_VER"
 info "     这一步会安装 108 个 R 包，首次约 30–90 分钟"
 BUILD_ARGS=()
-for v in PPM_CRAN CRAN_FALLBACK BIOC_ROOT R_BIOC_VERSION; do
+for v in PPM_CRAN CRAN_FALLBACK BIOC_ROOT R_BIOC_VERSION PIP_INDEX_URL PIP_OPTS; do
   [ -n "${!v:-}" ] && BUILD_ARGS+=(--build-arg "$v=${!v}")
 done
 docker build "${BUILD_ARGS[@]}" \

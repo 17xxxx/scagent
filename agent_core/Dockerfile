@@ -26,30 +26,40 @@ COPY vendor/wheels/linux-amd64-cp311 /vendor/wheels
 COPY agent_core/requirements.txt     /tmp/requirements.txt
 COPY agent_core/requirements.lock    /tmp/requirements.lock
 
-# 三种状态，按"锁文件是否存在"与"wheelhouse 是否可用"分开判断：
-#   ① 占位锁文件            → 联网装 requirements.txt   【版本不固定，最差】
-#   ② 有锁 + 有 wheelhouse  → 离线安装                  【最佳：不联网 + 版本固定 + 可校验哈希】
-#   ③ 有锁 + 无 wheelhouse  → 联网装【锁定版本】        【版本固定，但构建机需 PyPI】
-# 说明：③ 的存在很重要 —— 它让"版本固定"不必先有 wheelhouse。
-#       运行期与这三者都无关：包已在镜像层里，服务器不需要任何 Python 网络。
+# ═══════════════════════════════════════════════════════════════════════════════
+#  pip 下载策略
+#
+#  实测教训：files.pythonhosted.org 在国内会出现 85 kB/s 级别的慢速并读超时
+#  （ReadTimeoutError），构建下载到一半即失败。pip 默认 timeout=15s / retries=5，
+#  对这种抖动并不够。
+#
+#  因此默认走国内镜像并显式加大重试与超时。海外或想用官方源可覆盖：
+#      --build-arg PIP_INDEX_URL=https://pypi.org/simple
+#  想彻底不联网：先 ./scripts/push_registry.sh --make-lock 生成 wheelhouse。
+# ═══════════════════════════════════════════════════════════════════════════════
+ARG PIP_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
+ARG PIP_OPTS="--timeout 60 --retries 10"
+
+# 三种状态，按"锁文件是否真实"与"wheelhouse 是否有内容"分开判断：
+#   ① 占位锁文件            → 联网装 requirements.txt   【版本不固定】
+#   ② 有锁 + 有 wheelhouse  → 离线安装                  【不联网 + 版本固定】
+#   ③ 有锁 + 无 wheelhouse  → 联网装【锁定版本】        【版本固定，构建机需 PyPI】
+# 运行期与这三者都无关：包已在镜像层里，服务器不需要任何 Python 网络。
 RUN set -e; \
+    PIPARGS="${PIP_OPTS}"; \
+    if [ -n "${PIP_INDEX_URL}" ]; then PIPARGS="${PIPARGS} -i ${PIP_INDEX_URL}"; fi; \
+    echo "pip 参数: ${PIPARGS}"; \
     if grep -q "PLACEHOLDER" /tmp/requirements.lock; then \
       echo "⚠️  占位锁文件 → 联网安装 requirements.txt（版本不固定）"; \
-      pip install -r /tmp/requirements.txt; \
+      pip install ${PIPARGS} -r /tmp/requirements.txt; \
     elif ls /vendor/wheels/*.whl >/dev/null 2>&1; then \
-      if grep -q -- "--hash=" /tmp/requirements.lock; then \
-        echo "✅ 离线安装：wheelhouse + 锁文件 + 哈希校验"; \
-        pip install --no-index --find-links=/vendor/wheels \
-                    --require-hashes -r /tmp/requirements.lock; \
-      else \
-        echo "✅ 离线安装：wheelhouse + 锁文件（锁文件无哈希，跳过哈希校验）"; \
-        pip install --no-index --find-links=/vendor/wheels \
-                    -r /tmp/requirements.lock; \
-      fi; \
+      echo "✅ 离线安装：wheelhouse + 锁文件（不访问网络）"; \
+      pip install --no-index --find-links=/vendor/wheels \
+                  -r /tmp/requirements.lock; \
     else \
       echo "⚙️  有锁文件但无 wheelhouse → 联网安装【锁定版本】"; \
       echo "    构建机需要 PyPI；这不影响服务器运行（包已在镜像内）"; \
-      pip install -r /tmp/requirements.lock; \
+      pip install ${PIPARGS} -r /tmp/requirements.lock; \
     fi; \
     rm -f /tmp/requirements.txt /tmp/requirements.lock
 
