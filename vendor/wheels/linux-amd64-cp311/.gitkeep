@@ -1,0 +1,6 @@
+# 离线 Python wheel 存放目录（构建时由 make wheels 填充）
+#
+# 生成方式（见 docs/CLOUD_DEPLOY_PLAN.md Step 5）：
+#   pip download -r agent_core/requirements.lock -d vendor/wheels/linux-amd64-cp311 --only-binary=:all:
+#
+# 该目录内容会进 git（体积实测约 12 MB），使部署机无需访问 PyPI。

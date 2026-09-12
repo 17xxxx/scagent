@@ -1,0 +1,25 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  deploy/data.manifest —— 参考数据版本清单
+#
+#  数据与软件是两套独立的分发系统：
+#    · 软件（镜像）→ 私有 registry
+#    · 数据（参考集）→ 对象存储，由 scripts/download_data.sh 拉取
+#
+#  格式（空白分隔，支持 # 注释行）：
+#      <name>  <version>  <sha256>
+#
+#  下载后的落盘结构：
+#      /data/biodata/<name>/<name>-<version>.tar.gz   → 解包到 /data/biodata/<name>/
+#  容器内挂载：
+#      /data/biodata:/ref:ro      且 SCAGENT_REFDATA_DIR=/ref/celldex
+#
+#  注意：sha256 必须替换为真实值。生成方式：
+#      sha256sum celldex-2026.1.tar.gz
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# name      version   sha256
+celldex     2026.1    REPLACE_WITH_REAL_SHA256
+
+# ── 后续可扩展（示例，勿直接启用）────────────────────────────────────────────
+# 参考基因组、注释 GTF、多物种图谱等大型数据都加在这里。
+# 数据量增长时只改本文件并重跑 download_data.sh —— 不需要重建任何镜像。

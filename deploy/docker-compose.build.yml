@@ -1,0 +1,40 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  deploy/docker-compose.build.yml —— 构建机专用
+#
+#  只在「构建机」上使用：它需要外网（拉基础镜像 + 访问 PPM 装 R 包）。
+#  服务器绝不使用本文件。
+#
+#  两个镜像分层构建：
+#    scagent-runtime  —— 重型，108 个 R 包，半年重建一次
+#    scagent-seurat   —— 轻量，只 COPY 代码，改一次代码重建一次（数秒）
+#
+#  用法（由 scripts/push_registry.sh 调用）：
+#    docker compose -f deploy/docker-compose.build.yml build
+# ═══════════════════════════════════════════════════════════════════════════════
+
+services:
+
+  # ── R 运行时（重型基座）────────────────────────────────────────────────────
+  runtime:
+    build:
+      context: ..
+      dockerfile: seurat_backend/Dockerfile.runtime
+    image: ${RUNTIME_IMAGE:-scagent-runtime:${SCAGENT_VERSION:-1.0.0}}
+
+  # ── R 应用层（依赖 runtime）────────────────────────────────────────────────
+  seurat:
+    build:
+      context: ..
+      dockerfile: seurat_backend/Dockerfile
+      args:
+        RUNTIME: ${RUNTIME_IMAGE:-scagent-runtime:${SCAGENT_VERSION:-1.0.0}}
+    image: ${SEURAT_IMAGE:-scagent-seurat:${SCAGENT_VERSION:-1.0.0}}
+    depends_on:
+      - runtime
+
+  # ── Agent 服务 ─────────────────────────────────────────────────────────────
+  agent:
+    build:
+      context: ..
+      dockerfile: agent_core/Dockerfile
+    image: ${AGENT_IMAGE:-scagent-agent:${SCAGENT_VERSION:-1.0.0}}

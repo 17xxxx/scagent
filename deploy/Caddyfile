@@ -1,0 +1,49 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  deploy/Caddyfile —— 反向代理 + 自动 HTTPS
+#
+#  把 https://scagent.example.com 转发到本机 8080 的 agent 服务。
+#  为什么必须加这一层：
+#    · agent 服务只监听 127.0.0.1:8080，不该裸奔在公网
+#    · 令牌走公网时必须 HTTPS
+#    · 需要放行较大的请求体（upload/长文本）
+#
+#  用法：
+#      docker run -d --name caddy --network host \
+#        -v $PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro \
+#        -v caddy_data:/data caddy:2
+#
+#  把 scagent.example.com 换成你的域名，并确保该域名已解析到本机公网 IP。
+# ═══════════════════════════════════════════════════════════════════════════════
+
+scagent.example.com {
+	encode zstd gzip
+
+	reverse_proxy 127.0.0.1:8080 {
+		# 单次分析可能跑几十分钟；SSE 心跳在服务端，这里只放开读超时
+		transport http {
+			read_timeout 1h
+			write_timeout 1h
+		}
+		# 保留客户端真实 IP，便于审计日志
+		header_up X-Real-IP {remote_host}
+	}
+
+	# 允许较大的请求体（保留给未来的数据上传接口）
+	request_body {
+		max_size 2GB
+	}
+
+	# 基础安全响应头
+	header {
+		Strict-Transport-Security "max-age=31536000;"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	log {
+		output file /data/access.log
+		format json
+	}
+}

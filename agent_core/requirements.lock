@@ -1,0 +1,12 @@
+# PLACEHOLDER —— 这不是真正的锁文件，构建时会自动回退到联网安装。
+#
+# 请在有网机器上执行以下命令生成真正的锁文件（docs/CLOUD_DEPLOY_PLAN.md Step 5）：
+#
+#   pip install -r agent_core/requirements.txt
+#   python -c "from langchain.agents import create_agent; print('ok')"   # 必须通过
+#   pip freeze > agent_core/requirements.lock
+#   pip download -r agent_core/requirements.lock \
+#       -d vendor/wheels/linux-amd64-cp311 --only-binary=:all:
+#
+# 一旦本文件被真实内容覆盖，Dockerfile 会自动切换到
+# 「离线安装 + --require-hashes」模式（构建不再访问 PyPI）。

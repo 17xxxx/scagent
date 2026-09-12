@@ -1,0 +1,57 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  deploy/images.lock —— 私有化镜像搬运清单（Vendoring Manifest）
+#
+#  这是「我把哪些外部镜像搬进了自己的仓库」的唯一事实来源。
+#  用途：
+#    · scripts/push_registry.sh  按本清单搬运并构建
+#    · scripts/verify_vendoring.sh 逐条校验私有 registry 中镜像存在且 digest 一致
+#    · 安全审计时可回答：「服务器会不会偷偷去公网拉镜像？」
+#
+#  字段：
+#    source  原始镜像（公网）
+#    digest  固定摘要（arm64/amd64 各不同，构建机架构为准）
+#    target  私有 registry 中的目标名
+#
+#  ⚠️ digest 需要重新固定：当前为占位值。生成方式见 scripts/push_registry.sh 顶部说明。
+# ═══════════════════════════════════════════════════════════════════════════════
+
+version: "1.0.0"
+
+# ── 原封不动搬运的外部镜像（我们不重新打包，只改标签）────────────────────────
+vendor:
+  - source: docker.io/rocker/tidyverse:4.5.2
+    digest: "sha256:PIN_ME"          # 见 push_registry.sh: docker inspect --format='{{index .RepoDigests 0}}'
+    target: "${SCAGENT_REGISTRY}/base/tidyverse:4.5.2"
+    note: "R 4.5.2 + tidyverse，作为 scagent-runtime 的基座"
+
+  - source: docker.io/library/python:3.11-slim-bookworm
+    digest: "sha256:PIN_ME"
+    target: "${SCAGENT_REGISTRY}/base/python:3.11-slim-bookworm"
+    note: "Agent 服务基座"
+
+# ── 我们自己构建并推送的镜像 ──────────────────────────────────────────────────
+built:
+  - name: "${SCAGENT_REGISTRY}/bio/scagent-runtime:1.0.0"
+    from: "${SCAGENT_REGISTRY}/base/tidyverse:4.5.2"
+    dockerfile: seurat_backend/Dockerfile.runtime
+    changes: rarely              # 108 个 R 包，半年重建一次（≈4 GB）
+    note: "把 Seurat/SingleR R 运行时整体当作那个'搬运一次的微镜像'"
+
+  - name: "${SCAGENT_REGISTRY}/bio/scagent-seurat:1.0.0"
+    from: "${SCAGENT_REGISTRY}/bio/scagent-runtime:1.0.0"
+    dockerfile: seurat_backend/Dockerfile
+    changes: often               # 只 COPY 代码，改一次重建一次（≈10 MB）
+    note: "应用层；容器内不含任何 .rds（断言保证）"
+
+  - name: "${SCAGENT_REGISTRY}/bio/scagent-agent:1.0.0"
+    from: "${SCAGENT_REGISTRY}/base/python:3.11-slim-bookworm"
+    dockerfile: agent_core/Dockerfile
+    changes: often
+    note: "Agent 服务；依赖来自 vendor/wheels（离线安装）"
+
+# ── 明确不在清单内的东西（防止误用）─────────────────────────────────────────
+excluded:
+  - item: "基因参考数据（celldex 等 .rds）"
+    why: "属于「数据」而非「软件」，走对象存储 + download_data.sh，见 deploy/data.manifest"
+  - item: "10X 原始数据"
+    why: "客户自有数据，不进仓库也不进 registry"

@@ -1,53 +1,54 @@
-# 保持原有的基础镜像版本[cite: 1]
-FROM rocker/tidyverse:4.5.2
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  seurat_backend/Dockerfile —— R 后端应用层                                    ║
+# ║                                                                              ║
+# ║  只做两件事：把代码 COPY 进去 + 做构建期断言。                                 ║
+# ║  因此改一行 R 代码只需重建约 10 MB 的层，耗时数秒                              ║
+# ║  （重型依赖在 Dockerfile.runtime 里，见该文件说明）。                          ║
+# ║                                                                              ║
+# ║  重要：参考数据（celldex 等）**不进镜像** —— 由只读数据卷挂载。                 ║
+# ║        见 docs/VENDORING_AUDIT.md §3.2 / docs/CLOUD_DEPLOY_PLAN.md §3.2。      ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
 
-# ========== [1/4] 系统依赖 ==========
-# 保留你原有的底层系统库[cite: 1]
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libglpk40 \
-    cmake \
-    libssl-dev \
-    libcurl4-openssl-dev \
-    libxml2-dev \
-    libhdf5-dev \
-    libbz2-dev \
-    liblzma-dev \
-    && rm -rf /var/lib/apt/lists/*
+# 由构建机传入，默认值指向本地标签；正式构建请用 push_registry.sh 传私有 registry 地址
+ARG RUNTIME=scagent-runtime:1.0.0
+FROM ${RUNTIME}
 
-# ========== [2/4] 安装 pak 包管理器 ==========
-# 安装 pak，专门用于处理复杂的依赖和恶劣网络环境
-RUN R -e "install.packages('pak', repos = 'https://cran.rstudio.com/')"
+LABEL scagent.component="seurat-app"
 
-# 配置 Posit Package Manager (PPM) Linux 二进制源（自动匹配 Ubuntu/R 版本，免编译）
-ENV R_REPOS_OPT="https://packagemanager.posit.co/cran/__linux__/jammy/latest"
+# ── 应用代码 ──────────────────────────────────────────────────────────────────
+COPY seurat_backend /workspace/seurat_backend
 
-# ========== [3/4] 核心包全量安装 ==========
-# 使用 pak::pkg_install 并发安装清单中的所有包[cite: 1]
-# 注意：Bioconductor 包前添加了 'bioc::' 前缀以精准定位
-RUN R -e " \
-    pak::pkg_install(c( \
-        'plumber', 'Seurat', 'jsonlite', 'patchwork', 'harmony', \
-        'bioc::BiocBaseUtils', 'bioc::Biostrings', 'bioc::DESeq2', \
-        'bioc::DOSE', 'bioc::GO.db', 'bioc::GenomeInfoDb', \
-        'bioc::HDF5Array', 'bioc::Rhdf5lib', 'bioc::Rhtslib', \
-        'bioc::Rigraphlib', 'bioc::Rsamtools', 'bioc::SingleR', \
-        'bioc::celldex', 'bioc::clusterProfiler', 'bioc::ensembldb', \
-        'bioc::fgsea', 'bioc::org.Hs.eg.db', 'bioc::org.Mm.eg.db', \
-        'bioc::rtracklayer', 'bioc::DelayedMatrixStats', \
-        'bioc::BiocNeighbors', 'bioc::beachmat', \
-        'bioc::enrichplot', 'bioc::GOSemSim' \
-    ))"
+# ── 构建期断言：运行期禁止任何包安装（保证"零下载"可证明）────────────────────
+RUN if grep -rnE "install\.packages|BiocManager::install|pak::pkg_install|remotes::install" \
+        /workspace/seurat_backend/*.R ; then \
+      echo "❌ 运行期脚本中存在包安装调用，违反离线约束"; \
+      exit 1; \
+    else \
+      echo "✅ 断言通过：步骤脚本中无任何包安装调用"; \
+    fi
 
-# ========== [4/4] 独立安装本地非标包 ==========
-COPY shared_data/presto-master.zip /tmp/
+# ── 构建期断言：镜像内不得包含参考数据（数据与软件分离）──────────────────────
+RUN if find /workspace -name "*.rds" -o -name "*.RDS" | grep -q . ; then \
+      echo "❌ 镜像中发现 .rds 文件 —— 参考数据必须走数据卷，不得打进镜像"; \
+      find /workspace -name "*.rds" -o -name "*.RDS"; \
+      exit 1; \
+    else \
+      echo "✅ 断言通过：镜像内无参考数据文件"; \
+    fi
 
-# 针对本地 .zip 文件，使用 remotes::install_local 进行解压安装
-RUN R -e " \
-    if(!requireNamespace('remotes', quietly=TRUE)) install.packages('remotes'); \
-    remotes::install_local('/tmp/presto-master.zip', upgrade='never', dependencies=FALSE)" \
-    && rm -rf /tmp/*
-
-# ========== [新增] 单独补充 scrapper (利用缓存，避免重装前面的包) ==========
-RUN R -e "pak::pkg_install('bioc::scrapper')"
+# ── 运行时路径约定（均可被环境变量覆盖）──────────────────────────────────────
+ENV SCAGENT_BACKEND_DIR=/workspace/seurat_backend \
+    SCAGENT_DATA_DIR=/workspace/data \
+    SCAGENT_REFDATA_DIR=/ref/celldex \
+    SCAGENT_API_HOST=0.0.0.0 \
+    SCAGENT_API_PORT=9000
 
 WORKDIR /workspace
+
+EXPOSE 9000
+
+# 健康检查：/api/ping（api.R 提供），带 start-period 容忍 R 冷启动
+HEALTHCHECK --interval=15s --timeout=10s --start-period=120s --retries=20 \
+  CMD Rscript -e "q(status = if (is.null(tryCatch(jsonlite::fromJSON('http://127.0.0.1:9000/api/ping'), error=function(e) NULL))) 1 else 0)"
+
+CMD ["Rscript", "/workspace/seurat_backend/run_api.R"]

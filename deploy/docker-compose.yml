@@ -1,0 +1,77 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  deploy/docker-compose.yml —— 生产运行编排（服务器侧）
+#
+#  唯一部署路径：构建机 build → push 私有 registry → 服务器 pull
+#  （见 docs/CLOUD_DEPLOY_PLAN.md §8.2）
+#
+#  设计要点：
+#    1. SCAGENT_REGISTRY 用 `:?` 强制必填 —— 缺失时 compose 立即报错退出，
+#       绝不静默回落到公网 Docker Hub 命名空间（VENDORING_AUDIT §3.1）。
+#    2. pull_policy: never —— 本文件不发起任何拉取；拉取只在 up.sh 里显式进行。
+#    3. seurat 挂在 internal 网络上，物理上没有外网路由，运行期不可能下载任何东西。
+#    4. 参考数据以只读卷挂载，不进镜像（VENDORING_AUDIT §3.2/§3.3）。
+# ═══════════════════════════════════════════════════════════════════════════════
+
+name: scagent
+
+services:
+
+  # ── R 生信后端（无外网）────────────────────────────────────────────────────
+  seurat:
+    image: ${SCAGENT_REGISTRY:?SCAGENT_REGISTRY 必须设置，例如 harbor.corp.local/scagent}/scagent-seurat:${SCAGENT_VERSION:?SCAGENT_VERSION 必须设置}
+    pull_policy: never
+    networks:
+      - core                      # core 是 internal，无默认路由
+    volumes:
+      - "${SCAGENT_WORKSPACE:-./workspace}:/workspace"
+      - "${SCAGENT_BIODATA:-/data/biodata}:/ref:ro"     # ★ 参考数据：只读挂载
+    environment:
+      SCAGENT_DATA_DIR: /workspace/data
+      SCAGENT_BACKEND_DIR: /workspace/seurat_backend
+      SCAGENT_REFDATA_DIR: /ref/celldex
+      SCAGENT_API_HOST: 0.0.0.0
+      SCAGENT_API_PORT: "9000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "Rscript", "-e",
+             "q(status = if (is.null(tryCatch(jsonlite::fromJSON('http://127.0.0.1:9000/api/ping'), error=function(e) NULL))) 1 else 0)"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 120s          # R 首次 source 9 个脚本较慢
+    # 注意：不 publish 9000 端口 —— 只允许 agent 经内网访问
+
+  # ── Agent 服务（唯一有外网的容器，且只用于 LLM）────────────────────────────
+  agent:
+    image: ${SCAGENT_REGISTRY:?}/scagent-agent:${SCAGENT_VERSION:?}
+    pull_policy: never
+    networks:
+      - core
+      - egress                    # 唯一能出网的容器
+    ports:
+      - "127.0.0.1:${SCAGENT_PORT:-8080}:8080"    # 由反向代理暴露，不直接对公网
+    env_file:
+      - .env
+    environment:
+      SEURAT_API_BASE: http://seurat:9000
+      SCAGENT_DATA_DIR: /workspace/data
+      SCAGENT_STATE_DIR: /workspace/state
+      SCAGENT_API_PORT: "8080"
+    volumes:
+      - "${SCAGENT_WORKSPACE:-./workspace}:/workspace"
+    depends_on:
+      seurat:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/docs',timeout=4).status==200 else 1)"]
+      interval: 30s
+      timeout: 6s
+      retries: 5
+      start_period: 30s
+
+networks:
+  core:
+    internal: true                # ★ 无外网路由：把"零下载"变成架构保证
+  egress: {}
