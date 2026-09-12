@@ -25,16 +25,45 @@ check_tool_schemas.py —— 工具参数 schema 自检（构建期执行）
 """
 from __future__ import annotations
 
+import os
 import pathlib
 import sys
 
-REPO = pathlib.Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO / "agent_core"))
+def _find_agent_dir() -> pathlib.Path:
+    """定位 agent_core 目录。
+
+    不能只靠 __file__ 的相对路径：本脚本在容器构建时会被 COPY 到 /tmp/，
+    此时 parent.parent 会变成 "/"，找不到 agent_core。
+    因此按优先级探测多个候选位置。
+    """
+    here = pathlib.Path(__file__).resolve()
+    candidates: list[pathlib.Path] = []
+    env = os.getenv("SCAGENT_AGENT_DIR")
+    if env:
+        candidates.append(pathlib.Path(env))
+    candidates += [
+        pathlib.Path("/workspace/agent_core"),   # 容器内（Dockerfile 里的位置）
+        here.parent.parent / "agent_core",       # 仓库内 scripts/ 的兄弟目录
+        here.parent / "agent_core",              # 脚本被放在仓库根时
+        pathlib.Path.cwd() / "agent_core",       # 从仓库根执行时
+    ]
+    for c in candidates:
+        if (c / "agent_factory.py").is_file():
+            return c
+    raise SystemExit(
+        "❌ 找不到 agent_core 目录（应包含 agent_factory.py）。已尝试：\n    "
+        + "\n    ".join(str(c) for c in candidates)
+        + "\n   可用环境变量 SCAGENT_AGENT_DIR 显式指定。"
+    )
+
+
+AGENT_DIR = _find_agent_dir()
+sys.path.insert(0, str(AGENT_DIR))
 
 try:
     from agent_factory import ALL_TOOLS          # noqa: E402
 except Exception as exc:                          # noqa: BLE001
-    print(f"❌ 无法导入工具集: {exc}", file=sys.stderr)
+    print(f"❌ 无法从 {AGENT_DIR} 导入工具集: {exc}", file=sys.stderr)
     raise SystemExit(1)
 
 

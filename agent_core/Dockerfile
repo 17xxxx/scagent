@@ -52,7 +52,9 @@ COPY scripts/check_tool_schemas.py /tmp/check_tool_schemas.py
 # 构建期断言：所有工具的 args_schema 必须容忍空参数与 None
 #   —— 防止"字段声明为必填 str、调用方传 None"这类错误溜到运行期
 #      （曾经导致 pipeline_cli.py status 直接抛 pydantic ValidationError）
-RUN python /tmp/check_tool_schemas.py
+# 显式指定 agent_core 位置，避免依赖脚本的相对路径推断
+RUN SCAGENT_AGENT_DIR=/workspace/agent_core python /tmp/check_tool_schemas.py \
+ && rm -f /tmp/check_tool_schemas.py
 
 # ── 非 root 运行 ──────────────────────────────────────────────────────────────
 RUN useradd -m -u 1000 scagent \
