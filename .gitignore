@@ -48,3 +48,12 @@ state/
 # Docker secrets（绝不入库）
 secrets/
 deploy/secrets/
+
+# 未使用的离线 R 包仓（最大 100 MB，超 GitHub 单文件限制）
+# 需要时由 scripts/install_r_deps.R 从镜像源安装
+shared_data/*.tar.gz
+
+# 内部过程文档（本地保留，不公开）
+docs/CLOUD_DEPLOY_PLAN.md
+docs/VENDORING_AUDIT.md
+docs/TARGET_STATE_REVIEW.md
