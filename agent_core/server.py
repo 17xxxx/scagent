@@ -289,8 +289,10 @@ async def lifespan(app: FastAPI):
     RUN_SEMAPHORE = asyncio.Semaphore(SETTINGS.max_concurrent_runs)
 
     AGENT, AGENT_INFO = build_agent(SETTINGS)
+    # 注意：hitl_mode 已在 AGENT_INFO 里，不能再显式传一次
+    # （否则 TypeError: got multiple values for keyword argument）
     log("startup", **AGENT_INFO, data_dir=SETTINGS.data_dir,
-        hitl_mode=SETTINGS.hitl_mode, tools=tool_names())
+        tools=tool_names())
     yield
     log("shutdown")
 
