@@ -4,7 +4,7 @@ server.py —— scAgent HTTP 服务
 把原本只能本地交互式运行的 agent 改造成可远程调用的服务，
 使"分析跑在服务器、本地只下指令"成为可能。
 
-核心设计（对应 docs/CLOUD_DEPLOY_PLAN.md §4）：
+核心设计（对应 docs/PROD_HANDOVER.md）：
   1. HITL 状态机 —— 原实现阻塞在 input()，远程调用会永久挂起；
      这里改为返回 pending_approval + approval_id，客户端批准后再恢复执行。
   2. 会话持久化 —— SQLite checkpointer，服务重启不丢会话。

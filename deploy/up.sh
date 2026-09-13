@@ -3,7 +3,7 @@
 #  deploy/up.sh —— 启动/更新 scAgent 服务（服务器侧）
 #
 #  这是服务器上**唯一允许发起网络请求**的动作，且只允许访问私有 registry。
-#  设计依据：docs/VENDORING_AUDIT.md §3.1
+#  设计依据：docs/PROD_HANDOVER.md
 #    · 强制要求 SCAGENT_REGISTRY，缺失即报错 —— 绝不静默回落公网 Docker Hub
 #    · 显式拒绝 docker.io / index.docker.io / registry-1.docker.io
 #    · 拉取动作集中在此处，docker-compose.yml 里用 pull_policy: never

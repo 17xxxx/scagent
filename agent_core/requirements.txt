@@ -3,7 +3,7 @@
 # 注意：本文件是「人读清单」，不是可复现的锁文件。
 # 真正用于构建的是 requirements.lock（含精确版本 + sha256 哈希）。
 #
-# 生成锁文件（需在有网机器上执行一次，见 docs/CLOUD_DEPLOY_PLAN.md Step 5）：
+# 生成锁文件（需在有网机器上执行一次，见 docs/PROD_HANDOVER.md Step 5）：
 #     pip install -r requirements.txt
 #     python -c "from langchain.agents import create_agent; print('ok')"   # 必须通过
 #     pip freeze > requirements.lock

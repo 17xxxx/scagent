@@ -6,7 +6,7 @@
 # ║  （重型依赖在 Dockerfile.runtime 里，见该文件说明）。                          ║
 # ║                                                                              ║
 # ║  重要：参考数据（celldex 等）**不进镜像** —— 由只读数据卷挂载。                 ║
-# ║        见 docs/VENDORING_AUDIT.md §3.2 / docs/CLOUD_DEPLOY_PLAN.md §3.2。      ║
+# ║        见 docs/PROD_HANDOVER.md / docs/PROD_HANDOVER.md。      ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
 # 由构建机传入，默认值指向本地标签；正式构建请用 push_registry.sh 传私有 registry 地址

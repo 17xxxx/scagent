@@ -5,7 +5,7 @@
 #  本脚本**只在构建机上运行**。构建机需要外网（拉基础镜像 + 访问 PPM 装 R 包）；
 #  服务器不需要外网，只从私有 registry 拉取（见 deploy/up.sh）。
 #
-#  对应 docs/CLOUD_DEPLOY_PLAN.md §8.2 与 §8.4。
+#  对应 docs/PROD_HANDOVER.md 与 §8.4。
 #
 #  用法：
 #      ./scripts/push_registry.sh <version> <registry> [runtime-version]
@@ -14,7 +14,7 @@
 #      ./scripts/push_registry.sh --make-lock           # 只生成 Python 锁文件 + wheelhouse
 #      ./scripts/push_registry.sh --pin-digests         # 把基础镜像 digest 写回 images.lock
 #
-#  分层构建（VENDORING_AUDIT §3.4）：
+#  分层构建（PROD_HANDOVER）：
 #      base/tidyverse  →  scagent-runtime（≈4 GB，半年一次）
 #                      →  scagent-seurat （≈10 MB，每次改代码）
 #      base/python     →  scagent-agent  （≈0.4 GB）

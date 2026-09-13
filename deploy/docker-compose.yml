@@ -2,14 +2,14 @@
 #  deploy/docker-compose.yml —— 生产运行编排（服务器侧）
 #
 #  唯一部署路径：构建机 build → push 私有 registry → 服务器 pull
-#  （见 docs/CLOUD_DEPLOY_PLAN.md §8.2）
+#  （见 docs/PROD_HANDOVER.md）
 #
 #  设计要点：
 #    1. SCAGENT_REGISTRY 用 `:?` 强制必填 —— 缺失时 compose 立即报错退出，
-#       绝不静默回落到公网 Docker Hub 命名空间（VENDORING_AUDIT §3.1）。
+#       绝不静默回落到公网 Docker Hub 命名空间（PROD_HANDOVER）。
 #    2. pull_policy: never —— 本文件不发起任何拉取；拉取只在 up.sh 里显式进行。
 #    3. seurat 挂在 internal 网络上，物理上没有外网路由，运行期不可能下载任何东西。
-#    4. 参考数据以只读卷挂载，不进镜像（VENDORING_AUDIT §3.2/§3.3）。
+#    4. 参考数据以只读卷挂载，不进镜像（PROD_HANDOVER/§3.3）。
 # ═══════════════════════════════════════════════════════════════════════════════
 
 name: scagent

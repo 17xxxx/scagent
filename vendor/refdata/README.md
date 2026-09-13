@@ -7,6 +7,6 @@
 - 落盘：独立物理盘，如 `/data/biodata`
 - 挂载：compose `-v /data/biodata:/ref:ro`（只读）
 
-详见 docs/CLOUD_DEPLOY_PLAN.md §9.6 与 docs/VENDORING_AUDIT.md §3.2/§3.3。
+详见 docs/PROD_HANDOVER.md 与 docs/PROD_HANDOVER.md/§3.3。
 
 本目录仅作为占位，说明 refdata 的正确去向；请勿在此放置数据文件。
