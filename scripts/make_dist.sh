@@ -4,7 +4,7 @@
 #
 #  产出的是一个「源码级 + 包级」交付包：vendor/ 里带着全部 Python wheel 与 R 包仓，
 #  便于他人审查、重建或离线安装。**镜像本身不进交付包** ——
-#  镜像走私有 registry，见 scripts/push_registry.sh 与 docs/PROD_HANDOVER.md。
+#  镜像走私有 registry，见 scripts/push_registry.sh。
 #
 #  用法：
 #      ./scripts/make_dist.sh 1.0.0
@@ -49,7 +49,7 @@ if [ -d shared_data ]; then
   if [ "$n" -lt 100 ]; then
     warn "源码包数量偏少（$n）。注意：完整依赖闭包为 108 个包，"
     warn "  当前 shared_data 只覆盖一部分，不足以支撑源码级离线重建。"
-    warn "  详见 docs/PROD_HANDOVER.md 前身说明与 PROD_HANDOVER。"
+    warn "  如需源码级离线重建，请先补齐 shared_data/ 中的 R 包。"
   fi
 else
   warn "shared_data 不存在，跳过 R 包仓"

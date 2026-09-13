@@ -3,7 +3,6 @@
 #  scripts/setup-network.sh —— 受限网络环境适配
 #
 #  用途：为 scAgent 的构建/部署环境配置网络访问策略与镜像源。
-#        对应方案文档 docs/PROD_HANDOVER.md 附录 A.4。
 #
 #  解决的三个实测问题：
 #    1. 宿主无 IPv6，但大量域名有 AAAA 记录 → curl/pip/R 默认走 IPv6 会挂起至超时

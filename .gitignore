@@ -53,7 +53,7 @@ deploy/secrets/
 # 需要时由 scripts/install_r_deps.R 从镜像源安装
 shared_data/*.tar.gz
 
-# 内部过程文档（本地保留，不公开）
-docs/CLOUD_DEPLOY_PLAN.md
-docs/VENDORING_AUDIT.md
-docs/TARGET_STATE_REVIEW.md
+# 内部文档（本地保留备查，不公开、不推送）
+#   CHANGELOG / PROD_HANDOVER / DEPLOY_TUTORIAL 等含内部部署细节，
+#   不适合开源；如需彻底删除： rm -rf docs/
+docs/

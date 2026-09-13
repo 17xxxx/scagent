@@ -15,12 +15,11 @@
 - ✅ **可以**用于补齐若干 Bioconductor 包
 - ❌ **不能**单独支撑完整的离线重建（`docker build --network=none` 会失败）
 
-完整论证见 `docs/PROD_HANDOVER.md`。
 
 ## 正确用法
 
 主分发路径是**私有 registry 中的镜像** —— 镜像里已经装好了全部 108 个包，
-服务器不需要再装任何 R 包（见 `docs/PROD_HANDOVER.md`）。
+服务器不需要再装任何 R 包。
 
 如需生成索引以便 `install.packages(repos="file://...")` 使用：
 

@@ -1,12 +1,12 @@
 # ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║  seurat_backend/Dockerfile —— R 后端应用层                                    ║
+# ║  seurat_backend/Dockerfile —— R 后端应用层                                   ║
 # ║                                                                              ║
-# ║  只做两件事：把代码 COPY 进去 + 做构建期断言。                                 ║
-# ║  因此改一行 R 代码只需重建约 10 MB 的层，耗时数秒                              ║
-# ║  （重型依赖在 Dockerfile.runtime 里，见该文件说明）。                          ║
+# ║  只做两件事：把代码 COPY 进去 + 做构建期断言。                               ║
+# ║  因此改一行 R 代码只需重建约 10 MB 的层，耗时数秒                            ║
+# ║  （重型依赖在 Dockerfile.runtime 里，见该文件说明）。                        ║
 # ║                                                                              ║
-# ║  重要：参考数据（celldex 等）**不进镜像** —— 由只读数据卷挂载。                 ║
-# ║        见 docs/PROD_HANDOVER.md / docs/PROD_HANDOVER.md。      ║
+# ║  重要：参考数据（celldex 等）**不进镜像** —— 由只读数据卷挂载。              ║
+# ║        分发与挂载见 scripts/download_data.sh 与 vendor/refdata/README.md。   ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
 # 由构建机传入，默认值指向本地标签；正式构建请用 push_registry.sh 传私有 registry 地址

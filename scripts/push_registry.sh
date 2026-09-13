@@ -5,8 +5,6 @@
 #  本脚本**只在构建机上运行**。构建机需要外网（拉基础镜像 + 访问 PPM 装 R 包）；
 #  服务器不需要外网，只从私有 registry 拉取（见 deploy/up.sh）。
 #
-#  对应 docs/PROD_HANDOVER.md 与 §8.4。
-#
 #  用法：
 #      ./scripts/push_registry.sh <version> <registry> [runtime-version]
 #      例: ./scripts/push_registry.sh 1.0.0 harbor.corp.local/scagent

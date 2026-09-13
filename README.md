@@ -1,11 +1,6 @@
 # scAgent —— AI 驱动的单细胞 RNA 测序分析 Agent
 
-**作者 / Author：[sqx](AUTHORS)** ⟨sqx17x@gmail.com⟩ · **许可证 / License**：[GPL-3.0](LICENSE)
-
-> ⚠️ **本 README 部分内容已过时（改造中）。** 请优先阅读：
-> - `docs/CHANGELOG.md` —— 本轮改造全量记录 + 剩余待办
-> - `docs/PROD_HANDOVER.md` —— 开发 → 生产交付手册
-> - `docs/DEPLOY_TUTORIAL.md` —— 面向使用者的部署教程与 FAQ
+**许可证 / License**：[GPL-3.0](LICENSE) · 引用信息见 [`CITATION.cff`](CITATION.cff)
 
 scAgent 是一个双层架构的 AI 驱动 scRNA-seq 数据分析流水线，由 **Python LangChain/LangGraph AI Agent** 与 **R Seurat 生物信息学后端** 组成，两端通过 HTTP（Plumber API）通信，全程容器化运行。
 
@@ -100,18 +95,40 @@ data/rawdata/
 └── ...
 ```
 
-### 2. 配置环境变量
+### 2. 准备密钥
 
-在项目根目录创建 `.env` 文件：
+密钥**不通过 `.env` 注入容器**，而是生成到项目目录之外，再以 Docker secrets
+文件形式挂载 —— 这样密钥不会出现在 `docker inspect`、镜像层或环境变量中。
 
-```env
-DEEPSEEK_API_KEY=your_api_key_here
-DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
-MAX_HISTORY_TOKENS=6000
-KEEP_RECENT_MESSAGES=10
+```bash
+./scripts/setup_secrets.sh          # 交互式索取，写入权限 600 的文件
 ```
 
-### 3. 启动容器
+产出（默认在 `~/.config/scagent/`）：
+
+| 文件 | 内容 |
+|---|---|
+| `deepseek_api_key` | LLM API Key（形如 `sk-...`） |
+| `scagent_token` | 客户端访问令牌，**必填** —— 缺失时 `server.py` 拒绝启动 |
+
+> **为什么必须放在项目外**：开发编排挂载了整个仓库（`..:/workspace`），
+> 放在项目内的密钥文件会随挂载进入容器，secrets 就失去意义。
+>
+> 已有 `.env` 时脚本会自动从中读取；`--check` 只检查现状不写文件。
+> 容器内实际读取的是 `SCAGENT_LLM_API_KEY_FILE` / `SCAGENT_TOKEN_FILE`
+> 指向的这两个文件（见 `.devcontainer/docker-compose.yml`）。
+
+### 3. 构建镜像（首次约 30–90 分钟）
+
+镜像分两层，`seurat_backend/Dockerfile` 的 `FROM` 指向 runtime 镜像，
+**必须先构建 runtime 层** —— 直接 `docker compose build` 会因基础镜像不存在而失败：
+
+```bash
+./scripts/dev_build.sh              # 首次：runtime + 应用层
+./scripts/dev_build.sh --app-only   # 之后只改了 R/Python 代码：数秒完成
+```
+
+### 4. 启动容器
 
 在 VS Code 中打开项目，点击左下角绿色按钮选择 "Reopen in Container"，或手动启动：
 
@@ -119,12 +136,28 @@ KEEP_RECENT_MESSAGES=10
 docker compose -f .devcontainer/docker-compose.yml up -d
 ```
 
-### 4. 启动 Agent
+### 5. 运行
+
+容器默认 `sleep infinity` 常驻，服务需手动启动。按需选择入口：
 
 ```bash
-cd agent_core
-python agent_main.py
+DC="docker compose -f .devcontainer/docker-compose.yml"
+
+# A. HTTP 服务 + 网页界面 → http://127.0.0.1:8080
+$DC exec agent python /workspace/agent_core/server.py
+
+# B. 本地交互式 CLI（开发 / 调试用）
+$DC exec agent python /workspace/agent_core/agent_main.py
+
+# C. 确定性流水线（无需 LLM、无需 API Key）
+$DC exec agent python /workspace/agent_core/pipeline_cli.py status
 ```
+
+> 网页界面首次打开会要求输入 `scagent_token` 的内容作为访问令牌。
+
+> ⚠️ **关于 `.env`**：只有 `agent_main.py` 会通过 `load_dotenv()` 读取项目根的
+> `.env`；`server.py`、`pipeline_cli.py` 和 `docker compose` 都**不读取** `.env`。
+> 因此 `.env` 仅适合本地调试，正式配置请一律走第 2 步的 secrets。
 
 ## 使用方式
 
@@ -261,23 +294,8 @@ data/
 
 [GNU General Public License v3.0](LICENSE) (GPL-3.0)
 
-Copyright (C) 2026 **sqx**
+## 引用
 
-## 作者与引用
-
-- **作者 / Maintainer**：sqx ⟨sqx17x@gmail.com⟩
-- 第三方组件的版权归各自作者所有，见 [`AUTHORS`](AUTHORS) 与
-  [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md)
-
-若本项目对你的研究有帮助，欢迎引用 —— 机器可读的引用信息见
-[`CITATION.cff`](CITATION.cff)（GitHub 侧栏会显示 "Cite this repository"）：
-
-```bibtex
-@software{scagent2026,
-  author  = {sqx},
-  title   = {scAgent: AI 驱动的单细胞 RNA 测序分析 Agent},
-  year    = {2026},
-  version = {0.1.0},
-  license = {GPL-3.0-only}
-}
-```
+若本项目对你的研究有帮助，欢迎引用。机器可读的引用信息见
+[`CITATION.cff`](CITATION.cff)（GitHub 侧栏会显示 "Cite this repository"），
+作者与版权信息见 [`AUTHORS`](AUTHORS)。

@@ -4,7 +4,7 @@ config.py —— scAgent Python 侧集中配置
 原则：**所有可调项都来自环境变量**，代码里只保留默认值。
      这样同一份镜像可以在不同环境（本地 / 云 / 客户内网）用环境变量区分，不需要改代码。
 
-对应方案：docs/PROD_HANDOVER.md 环境变量约定
+对应约定：可调项一律走环境变量；密钥另支持 Docker secrets（<NAME>_FILE 优先）
 """
 from __future__ import annotations
 
