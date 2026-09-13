@@ -1,5 +1,7 @@
 # scAgent —— AI 驱动的单细胞 RNA 测序分析 Agent
 
+**作者 / Author：[sqx](AUTHORS)** ⟨sqx17x@gmail.com⟩ · **许可证 / License**：[GPL-3.0](LICENSE)
+
 > ⚠️ **本 README 部分内容已过时（改造中）。** 请优先阅读：
 > - `docs/CHANGELOG.md` —— 本轮改造全量记录 + 剩余待办
 > - `docs/PROD_HANDOVER.md` —— 开发 → 生产交付手册
@@ -258,3 +260,24 @@ data/
 ## 许可证
 
 [GNU General Public License v3.0](LICENSE) (GPL-3.0)
+
+Copyright (C) 2026 **sqx**
+
+## 作者与引用
+
+- **作者 / Maintainer**：sqx ⟨sqx17x@gmail.com⟩
+- 第三方组件的版权归各自作者所有，见 [`AUTHORS`](AUTHORS) 与
+  [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md)
+
+若本项目对你的研究有帮助，欢迎引用 —— 机器可读的引用信息见
+[`CITATION.cff`](CITATION.cff)（GitHub 侧栏会显示 "Cite this repository"）：
+
+```bibtex
+@software{scagent2026,
+  author  = {sqx},
+  title   = {scAgent: AI 驱动的单细胞 RNA 测序分析 Agent},
+  year    = {2026},
+  version = {0.1.0},
+  license = {GPL-3.0-only}
+}
+```

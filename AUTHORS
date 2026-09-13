@@ -1,0 +1,36 @@
+# scAgent 作者
+
+## 主要作者 / Maintainer
+
+- **sqx** ⟨sqx17x@gmail.com⟩
+
+  项目发起与唯一作者：架构设计、Python Agent 层（LangChain/LangGraph）、
+  R Seurat 分析后端（Plumber API + 01–09 分析步骤）、HITL 人机协同状态机、
+  容器化与镜像分层、私有化分发方案（构建机 → 私有 registry → 服务器 pull）、
+  密钥管理、静态门禁与文档。
+
+## 版权
+
+本项目版权归上述作者所有，以 **GNU General Public License v3.0**
+（SPDX: `GPL-3.0-only`）发布，完整条款见 [`LICENSE`](LICENSE)。
+
+```
+Copyright (C) 2026 sqx
+```
+
+## 第三方组件
+
+本项目的 Docker 镜像与仓库中包含第三方开源组件，**其版权归各自作者所有**，
+不因本文件而改变。完整清单（含 GPL/LGPL 传染性组件的标注）见
+[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md)。
+
+其中随本仓库一并分发的第三方**源码**：
+
+- `shared_data/presto-master.zip` —— R 包 `presto` 1.0.0（`License: GPL-3`），
+  上游为 GitHub `immunogenomics/presto`，未作任何修改。
+  作者：Ilya Korsunsky、Aparna Nathan、Nghia Millard、Soumya Raychaudhuri、
+  Kamil Slowikowski（维护者）、Austin Hartman。
+
+其余依赖（Seurat、SingleR、celldex、DESeq2、clusterProfiler 等）**不以源码形式
+随本仓库分发**，由构建机从 CRAN / Bioconductor 镜像获取，其源码与许可证条款请
+参见各上游项目。

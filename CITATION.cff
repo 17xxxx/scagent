@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "如果本项目对您的研究有帮助，请按以下格式引用。"
+title: "scAgent: AI 驱动的单细胞 RNA 测序分析 Agent"
+abstract: >-
+  scAgent 是一个双层架构的 AI 驱动单细胞 RNA 测序（scRNA-seq）分析流水线。
+  上层为 Python LangChain/LangGraph AI Agent，负责理解自然语言指令、规划分析
+  步骤并调用工具；下层为 R Seurat 生物信息学后端，通过 Plumber 提供 HTTP API，
+  执行质量控制、降维聚类、差异表达、细胞类型注释与功能富集等分析。两端全程
+  容器化运行，支持 Human-in-the-Loop 人工审批，并支持完全离线部署（唯一的外部
+  调用为 LLM API，可配置为本地或直接关闭）。
+type: software
+authors:
+  - name: "sqx"
+    email: "sqx17x@gmail.com"
+license: GPL-3.0-only
+version: "0.1.0"
+keywords:
+  - single-cell
+  - scRNA-seq
+  - bioinformatics
+  - Seurat
+  - LangGraph
+  - large language model
+  - agent
+  - reproducible research
