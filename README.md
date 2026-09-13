@@ -1,9 +1,9 @@
 # scAgent —— AI 驱动的单细胞 RNA 测序分析 Agent
 
-> ⚠️ **本 README 部分内容已过时。** 请优先阅读：
+> ⚠️ **本 README 部分内容已过时（改造中）。** 请优先阅读：
 > - `docs/CHANGELOG.md` —— 本轮改造全量记录 + 剩余待办
 > - `docs/PROD_HANDOVER.md` —— 开发 → 生产交付手册
-> - `docs/CLOUD_DEPLOY_PLAN.md` —— 架构方案
+> - `docs/DEPLOY_TUTORIAL.md` —— 面向使用者的部署教程与 FAQ
 
 scAgent 是一个双层架构的 AI 驱动 scRNA-seq 数据分析流水线，由 **Python LangChain/LangGraph AI Agent** 与 **R Seurat 生物信息学后端** 组成，两端通过 HTTP（Plumber API）通信，全程容器化运行。
 
@@ -232,3 +232,29 @@ data/
 ├── heatmap/               # 热图
 └── enrichment/            # GO 富集
 ```
+
+---
+
+## ⚠️ 免责声明
+
+**本工具仅供科研参考，不应用于直接的临床诊断或医疗决策。**
+
+- 所有分析结果（细胞类型注释、聚类、富集等）均为**计算推断**，未经实验验证
+- 使用者需自行确保输入数据的**合规性与隐私安全**（样本知情同意、伦理审批、
+  人类遗传资源管理、GDPR/《个人信息保护法》等适用的法规要求）
+- 本项目不收集、不上传任何数据；全部分析在自建环境中完成，
+  唯一的外部调用是 LLM API（可通过 `SCAGENT_LLM_PROVIDER=none` 完全关闭）
+- 作者不对使用本工具产生的任何后果承担责任
+
+## 依赖许可证
+
+本项目的**核心生信依赖包含 GPL-3.0 组件**（Seurat、SingleR、celldex 等），
+因此本项目采用 **GPL-3.0** 授权以保持一致。
+
+完整的依赖许可证清单（含 GPL/LGPL 传染性组件的标注）见
+[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md)。
+**分发本项目的 Docker 镜像时，请一并遵守其中列出的第三方许可证条款。**
+
+## 许可证
+
+[GNU General Public License v3.0](LICENSE) (GPL-3.0)
