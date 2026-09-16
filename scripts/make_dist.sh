@@ -142,7 +142,7 @@ if [ "$WITH_DOCS" -eq 1 ]; then
 else
   warn "已跳过内部文档 docs/（默认行为；如确需包含请加 --with-docs）"
 fi
-cp README.md TOOLS_HELP.txt "$OUT/" 2>/dev/null || true
+cp README.md README.zh-CN.md TOOLS_HELP.txt "$OUT/" 2>/dev/null || true
 
 # 配置模板必须保留，真实 .env 与密钥目录必须排除（复制后立刻清掉，不依赖后续检查）
 sanitize_dist "$OUT"
