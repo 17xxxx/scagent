@@ -12,7 +12,8 @@
 # ║  安全：绝不 COPY .env / *.key（.dockerignore 已兜底，此处再次声明）。          ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
-FROM python:3.11-slim-bookworm
+# 基础镜像按 digest 固定（对应 deploy/images.lock 中记录的摘要），理由同 seurat_backend/Dockerfile.runtime
+FROM python:3.11-slim-bookworm@sha256:528257d48c1da0dcecc2e725d1ae34498d60c965f1241e39cd6a85a8859bdf84
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

@@ -12,6 +12,9 @@
 #    digest  固定摘要（arm64/amd64 各不同，构建机架构为准）
 #    target  私有 registry 中的目标名
 #
+#  注意：seurat_backend/Dockerfile.runtime 与 agent_core/Dockerfile 的 FROM 也按
+#        这里的 digest 固定（`<镜像>:<tag>@sha256:…`）；改 digest 时三处要同步。
+#
 #  digest 已用真实值固定（生成方式： docker inspect --format='{{index .RepoDigests 0}}' <image>）。
 # ═══════════════════════════════════════════════════════════════════════════════
 

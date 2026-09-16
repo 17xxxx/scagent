@@ -9,7 +9,7 @@
 #
 #  产出（默认落点，按此顺序解析）：
 #    1) deploy/.env 中的 SCAGENT_SECRETS_DIR
-#    2) <仓库>/../scagent-secrets
+#    2) <仓库>/../secrets
 #    文件名 deepseek_api_key / scagent_token，权限 600；目录权限 700
 #
 #  用法：

@@ -12,7 +12,10 @@
 # ║  部署机要求：无 —— 只需要从私有 registry 拉取本镜像                          ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
-FROM rocker/tidyverse:4.5.2
+# 基础镜像按 digest 固定（对应 deploy/images.lock 中记录的摘要）——
+# 只写 tag 时，不同机器/不同时间构建可能解析到不同的镜像内容，
+# 导致同一份源码产出体积与层摘要都不同的镜像。
+FROM rocker/tidyverse:4.5.2@sha256:4813816ad695004b738ccfff8513ce43f017e6fe78fb273aafd0bee4d4e1070a
 
 LABEL scagent.component="runtime" \
       scagent.r.version="4.5.2" \

@@ -85,15 +85,15 @@ scagent/
 | ③ 启动 | 拉取或构建镜像并启动（Windows 的 `install` 已包含这一步） | Linux：`./deploy/up.sh`<br>Windows：`deploy\scagent.cmd up` |
 | ④ 放数据并使用 | 把 10X 数据放进工作目录，浏览器访问并粘贴访问令牌 | 见 [DEPLOY.md](DEPLOY.md) §5 |
 
-> **想跳过首次 30–90 分钟的本机构建？** 用已发布镜像，只在第 ② 步多给一个参数。
+> **想跳过首次本机构建** 用已发布镜像，只在第 ② 步多给一个参数。
 > 两个源任选（镜像由不同环境构建，功能一致，详见 [DEPLOY.md](DEPLOY.md) §0）：
 >
 > ```bash
-> # Linux / WSL：二选一（下面两条只跑一条，再跑 ./deploy/up.sh）
-> # ① 默认：GitHub（GHCR）
+> # Linux / WSL：二选一（下面两条只运行一条，再运行 ./deploy/up.sh）
+> # ① GitHub（GHCR）
 > ./deploy/configure.sh --image-source public --image-prefix ghcr.io/17xxxx/scagent
 >
-> # ② 中国大陆网络更快：阿里云 ACR（首次约 2.4 GB）
+> # ② 中国大陆：阿里云 ACR（首次约 2.4 GB）
 > ./deploy/configure.sh --image-source public \
 >   --image-prefix crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen
 > ```
@@ -106,7 +106,7 @@ scagent/
 >
 > 注意：**不指定就是本机构建**（`local`，首次 30–90 分钟），Windows 的 `install` 不会询问镜像来源。
 
-三件事先知道，可以省掉大部分弯路：
+注意事项：
 
 - **LLM API Key**：在第 ② 步输入，存放在安装根目录下的 `secrets/deepseek_api_key`（独立文件，不写进 `.env`）；**没有它服务无法启动**。
 - **数据放哪**：`<安装根>/workspace/data/rawdata/<样本名>/` —— 每个样本一个子目录，`barcodes` / `features` / `matrix` 三个文件直接放里面；**不是**仓库目录里的 `data/`。
