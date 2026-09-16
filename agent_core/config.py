@@ -214,10 +214,8 @@ def load_settings() -> Settings:
     )
     # ── 密钥：支持 *_FILE（Docker secrets），失败即记录错误、不静默回退 ──
     #
-    # 两个密钥**各自 try**：早先写成一个 try 包住两次读取，于是"LLM 密钥文件坏了"
-    # 会把已经读到的 scagent_token 一起丢掉 → SETTINGS.token 变成空串 →
-    # server.py 判成"未设置令牌"并拒绝服务（503 / 启动即退出）。
-    # 现象与原因完全对不上，排查成本极高。
+    # 两个密钥**各自 try**：一个读取失败（文件缺失 / 为空 / 无权限）不应影响另一个，
+    # 否则"LLM 密钥有问题"会连带丢掉已读到的访问令牌，报错原因与现象对不上。
     config_error: Optional[str] = None      # LLM 密钥相关（llm_ready 会引用）
     token_error: Optional[str] = None       # 访问令牌相关（只在报错文案里用）
 

@@ -36,7 +36,7 @@ def host_rawdata_dir() -> str:
 
     容器内 /data 就是宿主机的 <工作目录>/data，所以宿主机路径是
     <SCAGENT_HOST_WORKSPACE>/data/rawdata。把这句话写进报错里，
-    用户就不用猜"到底该把数据放哪"（实测最常见的误放：放进**仓库目录**的 data/）。
+    用户就不用猜"到底该把数据放哪"（最常见的误放：放进**仓库目录**的 data/）。
     """
     ws = os.getenv("SCAGENT_HOST_WORKSPACE") or os.getenv("SCAGENT_WORKSPACE") or ""
     ws = ws.strip()

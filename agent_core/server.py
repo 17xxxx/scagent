@@ -176,10 +176,10 @@ def _pending_from_checkpoint(session_id: str,
                              project: Optional[str] = None) -> Optional[PendingApproval]:
     """从 checkpoint 重建"待批准"信息（进程重启后 PENDING 必为空，但 interrupt 还在）。
 
-    为什么需要它：会话历史存在 SQLite checkpointer 里，进程重启不丢；而 PENDING 是
-    进程内字典，重启即空。此时历史里留着"调用了工具却没有结果"的记录，直接把新消息
-    交给模型会被拒绝（tool_calls 缺少对应的 tool 消息 → 400 → 对外表现为 500）。
-    这里用 get_state() 把待批准的动作取回来，让用户仍能批准/拒绝。
+    用途：会话历史存在 SQLite checkpointer 里、进程重启不丢，而 PENDING 是进程内字典、
+    重启即空。此时历史里会留下"调用了工具却没有结果"的记录，直接把新消息交给模型会被
+    拒绝（tool_calls 缺少对应的 tool 消息 → 400 → 对外表现为 500）。
+    这里用 get_state() 把待批准的动作取回来，让用户仍能批准 / 拒绝。
     """
     try:
         snap = AGENT.get_state({"configurable": {"thread_id": session_id}})
@@ -301,8 +301,8 @@ async def lifespan(app: FastAPI):
         raise SystemExit(2)
 
     if not SETTINGS.token:
-        # 区分"没配"和"配了但读不到"—— 后者（文件缺失/空/无权限）此前只说"未设置"，
-        # 把真正的原因藏了起来（见 deploy 侧的 secrets 排查）
+        # 区分"没配"与"配了但读不到"（文件缺失 / 为空 / 无权限），后者的原因是
+        # SCAGENT_TOKEN_FILE 本身，直接报出来比笼统地说"未设置"更可诊断
         if SETTINGS.token_error:
             log("startup_error", reason=SETTINGS.token_error)
             print(f"❌ 访问令牌读取失败：{SETTINGS.token_error}\n"

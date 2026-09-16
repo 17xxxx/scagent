@@ -31,9 +31,9 @@ COPY agent_core/requirements.lock    /tmp/requirements.lock
 # ═══════════════════════════════════════════════════════════════════════════════
 #  pip 下载策略
 #
-#  实测教训：files.pythonhosted.org 在国内会出现 85 kB/s 级别的慢速并读超时
-#  （ReadTimeoutError），构建下载到一半即失败。pip 默认 timeout=15s / retries=5，
-#  对这种抖动并不够。
+#  files.pythonhosted.org 在国内可能出现 85 kB/s 级别的慢速并读超时
+#  （ReadTimeoutError），导致构建下载中途失败。pip 默认 timeout=15s / retries=5，
+#  对这种抖动不够。
 #
 #  因此默认走国内镜像并显式加大重试与超时。海外或想用官方源可覆盖：
 #      --build-arg PIP_INDEX_URL=https://pypi.org/simple
@@ -79,7 +79,7 @@ COPY scripts/check_tool_schemas.py /tmp/check_tool_schemas.py
 
 # 构建期断言：所有工具的 args_schema 必须容忍空参数与 None
 #   —— 防止"字段声明为必填 str、调用方传 None"这类错误溜到运行期
-#      （曾经导致 pipeline_cli.py status 直接抛 pydantic ValidationError）
+#      （这种情况下 pipeline_cli.py 会在调用时抛 pydantic ValidationError）
 # 显式指定 agent_core 位置，避免依赖脚本的相对路径推断
 RUN SCAGENT_AGENT_DIR=/workspace/agent_core python /tmp/check_tool_schemas.py \
  && rm -f /tmp/check_tool_schemas.py
