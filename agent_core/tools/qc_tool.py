@@ -28,7 +28,23 @@ def raw_data_dir() -> str:
       · pipeline_cli.py --data-dir 的临时覆盖
       · 服务端按租户切换数据根目录
     """
-    return os.path.join(os.getenv("SCAGENT_DATA_DIR", "/workspace/data"), "rawdata")
+    return os.path.join(os.getenv("SCAGENT_DATA_DIR", "/data"), "rawdata")
+
+
+def host_rawdata_dir() -> str:
+    """宿主机侧对应的 rawdata 目录（仅用于错误提示）。
+
+    容器内 /data 就是宿主机的 <工作目录>/data，所以宿主机路径是
+    <SCAGENT_HOST_WORKSPACE>/data/rawdata。把这句话写进报错里，
+    用户就不用猜"到底该把数据放哪"（实测最常见的误放：放进**仓库目录**的 data/）。
+    """
+    ws = os.getenv("SCAGENT_HOST_WORKSPACE") or os.getenv("SCAGENT_WORKSPACE") or ""
+    ws = ws.strip()
+    if not ws:
+        return ""
+    if ":" in ws or "\\" in ws:                     # Windows 路径：统一成反斜杠
+        return ws.replace("/", "\\").rstrip("\\") + "\\data\\rawdata"
+    return ws.rstrip("/") + "/data/rawdata"          # POSIX 路径
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
@@ -173,12 +189,18 @@ def run_qc_for_all_samples(
     samples = _scan_samples(raw_dir)
 
     if not samples:
+        host_raw = host_rawdata_dir()
+        hint = ""
+        if host_raw:
+            hint = (f"\n\n宿主机上对应的目录是：{host_raw}"
+                    f"\n（容器里的 {raw_dir} 就是它；请把样本放进这个目录）"
+                    f"\n⚠️ 注意：数据要放在**工作目录**下，不要放到仓库（代码）目录里的 data/。")
         return {
             "status": "no_data",
             "message": (f"在 {raw_dir} 中未找到任何 10X 数据样本。\n"
                         f"请把每个样本放到 {raw_dir}/<样本名>/ 下，"
                         f"并确保其中有 barcodes.tsv.gz / features.tsv.gz / matrix.mtx.gz"
-                        f"（文件名不要带样本名前缀）。"),
+                        f"（文件名不要带样本名前缀）。" + hint),
         }
 
     # 2. 构建平铺 JSON（samples dict + 全部参数），一次性发给 R

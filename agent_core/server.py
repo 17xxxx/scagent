@@ -171,6 +171,37 @@ def _register_pending(session_id: str, interrupts: Any,
     return pa
 
 
+def _pending_from_checkpoint(session_id: str,
+                             tenant: Optional[str] = None,
+                             project: Optional[str] = None) -> Optional[PendingApproval]:
+    """从 checkpoint 重建"待批准"信息（进程重启后 PENDING 必为空，但 interrupt 还在）。
+
+    为什么需要它：会话历史存在 SQLite checkpointer 里，进程重启不丢；而 PENDING 是
+    进程内字典，重启即空。此时历史里留着"调用了工具却没有结果"的记录，直接把新消息
+    交给模型会被拒绝（tool_calls 缺少对应的 tool 消息 → 400 → 对外表现为 500）。
+    这里用 get_state() 把待批准的动作取回来，让用户仍能批准/拒绝。
+    """
+    try:
+        snap = AGENT.get_state({"configurable": {"thread_id": session_id}})
+    except Exception:                                   # noqa: BLE001
+        return None
+    for task in (getattr(snap, "tasks", None) or []):
+        for irq in (getattr(task, "interrupts", None) or []):
+            value = getattr(irq, "value", None)
+            if isinstance(value, dict) and value.get("action_requests"):
+                pa = PendingApproval(
+                    approval_id="ap_" + uuid.uuid4().hex[:12],
+                    session_id=session_id,
+                    created_at=time.time(),
+                    action_requests=list(value["action_requests"]),
+                    tenant=tenant,
+                    project=project,
+                )
+                PENDING[pa.approval_id] = pa
+                return pa
+    return None
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Agent 运行
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -336,12 +367,19 @@ WEB_UI = """<!doctype html>
   <button class="primary" onclick="send()">发送</button>
 </div>
 <div class="tok">访问令牌保存在本机浏览器，不会上传到别处。
-  <a href="#" onclick="setToken();return false">重新设置</a></div>
+  <a href="#" onclick="setToken();return false">重新设置</a> ·
+  <a href="#" onclick="newSession();return false">新建会话</a>（服务重启后若提示"待批准"，可用它重新开始）</div>
 <script>
 const $ = s => document.querySelector(s);
 let SESSION = localStorage.getItem('scagent_session');
 if(!SESSION){ SESSION = 'web_' + Math.random().toString(36).slice(2,10);
               localStorage.setItem('scagent_session', SESSION); }
+function newSession(){
+  SESSION = 'web_' + Math.random().toString(36).slice(2,10);
+  localStorage.setItem('scagent_session', SESSION);
+  document.querySelector('#log').innerHTML = '';
+  say('sys', '已新建会话：' + SESSION);
+}
 function token(){ return localStorage.getItem('scagent_token') || ''; }
 function setToken(){ const t = prompt('请输入访问令牌（SCAGENT_TOKEN）', token());
                      if(t!==null){ localStorage.setItem('scagent_token', t.trim()); } }
@@ -353,7 +391,11 @@ async function api(path, body){
     headers:{'Content-Type':'application/json','Authorization':'Bearer '+token()},
     body: JSON.stringify(body)});
   if(r.status===401){ setToken(); throw new Error('访问令牌无效，请重新设置'); }
-  if(!r.ok){ throw new Error('HTTP '+r.status+': '+await r.text()); }
+  if(!r.ok){
+    let t = await r.text();
+    try{ const j = JSON.parse(t); if(j && j.detail) t = j.detail; }catch(e){}
+    throw new Error(t);
+  }
   return r.json();
 }
 function renderApproval(d){
@@ -375,6 +417,7 @@ async function decide(id, decision, box){
        after(r); }catch(e){ say('sys','错误：'+e.message); }
 }
 function after(r){
+  if(r.note) say('sys', r.note);
   if(r.status==='pending_approval'){ say('sys','等待你批准…'); renderApproval(r); }
   else if(r.reply){ say('ai', r.reply); }
   else { say('sys','完成（无文本回复）'); }
@@ -502,6 +545,25 @@ async def chat(request: Request, _: None = Depends(require_token)):
         tenant=p["tenant"], message=p["message"][:200])
     payload = {"messages": [{"role": "user", "content": p["message"]}]}
 
+    # 守卫：该会话若还挂着一个未回答的 interrupt（典型场景：服务重启过），
+    # 就直接把待批准的动作交回给用户，**不要**把新消息塞进历史 —— 否则历史里
+    # "tool_calls 没有对应结果"会被 LLM 拒绝（400，对外表现为 500），会话被写坏。
+    pending = _pending_from_checkpoint(p["session_id"], p["tenant"], p["project"])
+    if pending is not None:
+        log("chat_blocked_by_pending", run_id=run_id, session_id=p["session_id"],
+            approval_id=pending.approval_id,
+            tools=[a.get("name") for a in pending.action_requests])
+        return JSONResponse({
+            "status": "pending_approval",
+            "session_id": p["session_id"],
+            "run_id": run_id,
+            "approval_id": pending.approval_id,
+            "action_requests": pending.action_requests,
+            "reply": None,
+            "note": ("该会话还有一个待批准的操作（通常是服务重启前留下的）："
+                     "请先批准或拒绝；也可以点『新建会话』重新开始。"),
+        })
+
     if not p["stream"]:
         result = await _execute(p["session_id"], payload, p["tenant"], p["project"])
         # auto_approve / deny_all：策略模式下自动继续，无需客户端介入
@@ -553,6 +615,14 @@ async def approval(request: Request, _: None = Depends(require_token)) -> Dict[s
         raise HTTPException(status_code=400, detail="decision 必须是 approve 或 reject")
 
     pa = PENDING.get(approval_id or "")
+    if pa is None and session_id:
+        # 进程重启后 PENDING 会清空，但 checkpoint 里的 interrupt 还在 ——
+        # 用会话 ID 重建，让用户仍能批准/拒绝（拒绝同时是修复被写坏会话的出口）。
+        pa = _pending_from_checkpoint(session_id, tenant=None, project=None)
+        if pa is not None:
+            log("approval_recovered_from_checkpoint", session_id=session_id,
+                approval_id=pa.approval_id,
+                tools=[a.get("name") for a in pa.action_requests])
     if pa is None:
         raise HTTPException(status_code=404,
                             detail="批准请求不存在或已过期（默认 1 小时）")

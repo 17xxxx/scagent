@@ -70,9 +70,22 @@ def _show(title: str, result: Any) -> bool:
     if isinstance(result, dict):
         status = result.get("status")
         print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
-        return status in {"success", None}
+        return _is_ok_status(status)
     print(result)
     return True
+
+
+def _is_ok_status(status: Any) -> bool:
+    """把 R 侧返回的 status 归一化后再判断。
+
+    为什么需要：R 容器用 jsonlite 序列化，**标量会被装进数组**
+    （例如 `"status":["success"]`，而不是 `"status":"success"`）。
+    直接 `status in {"success", None}` 会抛
+    `TypeError: unhashable type: 'list'` —— 明明分析已经成功，命令行却崩了。
+    """
+    if isinstance(status, (list, tuple)):
+        status = status[0] if len(status) > 0 else None
+    return status in {"success", "ok", None}
 
 
 def cmd_status(args) -> int:

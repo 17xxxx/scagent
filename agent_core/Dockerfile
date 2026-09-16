@@ -22,6 +22,8 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /workspace
 
 # ── Python 依赖 ────────────────────────────────────────────────────────────────
+#  vendor/wheels 默认是空目录（仓库不随附 wheel）；为空时会自动走联网安装（PyPI）。
+#  若自建了 wheelhouse（push_registry.sh --make-lock），下面的分支会自动改用它。
 COPY vendor/wheels/linux-amd64-cp311 /vendor/wheels
 COPY agent_core/requirements.txt     /tmp/requirements.txt
 COPY agent_core/requirements.lock    /tmp/requirements.lock
@@ -84,15 +86,17 @@ RUN SCAGENT_AGENT_DIR=/workspace/agent_core python /tmp/check_tool_schemas.py \
 
 # ── 非 root 运行 ──────────────────────────────────────────────────────────────
 RUN useradd -m -u 1000 scagent \
- && mkdir -p /workspace/state \
+ && mkdir -p /state \
  && chown -R scagent:scagent /workspace
+RUN chown scagent:scagent /state
 
 USER scagent
 
-# 默认值与 docker-compose 保持一致（均可被环境变量覆盖）
-ENV SCAGENT_DATA_DIR=/workspace/data \
-    SCAGENT_STATE_DIR=/workspace/state \
-    SCAGENT_BACKEND_DIR=/workspace/seurat_backend \
+# 默认值与 docker-compose 保持一致（均可被环境变量覆盖）；R2 清理：
+#   · 数据/状态默认改为 /data 与 /state（compose 挂载点）
+#   · 删掉 SCAGENT_BACKEND_DIR —— Python 侧零引用，是死配置（F2）
+ENV SCAGENT_DATA_DIR=/data \
+    SCAGENT_STATE_DIR=/state \
     SCAGENT_API_HOST=0.0.0.0 \
     SCAGENT_API_PORT=8080 \
     PYTHONPATH=/workspace/agent_core
