@@ -1,25 +1,21 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 #  .github/workflows/publish-images.yml —— 构建并发布镜像到 GHCR
 #
-#  为什么在 Actions 里构建、而不是在本地 `docker push`：
-#    镜像解压后约 8 GB（压缩后 seurat 2.28 GB + agent 0.08 GB），从国内上行到
-#    ghcr.io 又慢又容易断；放在 runner 上构建则本地**零上行**，且公开仓库的
-#    Actions 免费。
-#
 #  触发方式：
 #    · 打 tag：  git tag v1.0.0 && git push origin v1.0.0
 #    · 手动：    仓库 → Actions → publish-images → Run workflow（填版本号）
 #
-#  产物（与 deploy/.env 的 SCAGENT_IMAGE_PREFIX 对应）：
+#  产物（对应 deploy/.env 的 SCAGENT_IMAGE_PREFIX）：
 #    ghcr.io/<owner>/scagent/scagent-runtime:<版本>
 #    ghcr.io/<owner>/scagent/scagent-seurat:<版本>
 #    ghcr.io/<owner>/scagent/scagent-agent:<版本>
-#    部署方只需把 SCAGENT_IMAGE_PREFIX 设为 ghcr.io/<owner>/scagent
+#    部署方把 SCAGENT_IMAGE_PREFIX 设为 ghcr.io/<owner>/scagent 即可拉取。
 #
-#  三个注意点：
-#    1. **必须按 runtime → seurat 的顺序**：seurat 的 `FROM ${RUNTIME}` 依赖 runtime 已存在；
-#    2. 首次推送后去 Packages 页面确认包可见性（需要公开时手动改成 Public）；
-#    3. runtime 层要装 100+ 个 R 包，首次 30–90 分钟；`type=gha` 缓存能让后续构建快很多。
+#  顺序与耗时：
+#    runtime → seurat → agent 必须串行（seurat 的 `FROM ${RUNTIME}` 要求 runtime 已存在）。
+#    runtime 层安装 100 余个 R 包，首次约 30–90 分钟；`type=gha` 缓存加速后续构建。
+#
+#  发布后：在 GitHub 的 Packages 页面把三个包设为 Public，匿名用户才能直接拉取。
 # ═══════════════════════════════════════════════════════════════════════════════
 
 name: publish-images
