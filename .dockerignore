@@ -3,19 +3,33 @@
 #
 #  背景：docker-compose 的构建上下文是项目根目录（context: ..）。
 #  不加此文件时，会把 data/ (7.2 GB) 与 .env (含 API Key) 一并送给 Docker daemon。
-#  加上后上下文从 7.2 GB 降到 < 350 MB（shared_data/ 284 MB 必须保留）。
+#  加上后上下文从 7.2 GB 降到约 1 MB。
+#  说明：shared_data/ 里的 R 源码包（*.tar.gz，约 284 MB）**不参与构建**
+#        （Dockerfile.runtime 只 COPY presto-master.zip），因此一并排除；
+#        它们只在自建"离线包仓"时才需要，属于本地可选资产。
 #
 #  注意：.env / *.key / *.pem 必须在列 —— 否则密钥会被 COPY 进镜像层。
 # ═══════════════════════════════════════════════════════════════════════════
 
 # ── 密钥与凭据（安全红线，任何情况下都不得进入镜像）──
+#  注意：Docker 的 .dockerignore 模式**以构建上下文根为锚** —— 不带 `**/` 的
+#        `.env` / `secrets/` 命中不了 deploy/.env 与 deploy/secrets/。
+#        因此下面同时给出根级与任意层级两种写法。
 .env
+**/.env
 .env.*
+**/.env.*
+!**/.env.sample
 !.env.sample
 *.key
+**/*.key
 *.pem
+**/*.pem
 secrets/
+**/secrets/
+deploy/secrets/
 *credentials*
+**/*credentials*
 
 # ── 版本控制与文档 ──
 .git
@@ -28,6 +42,19 @@ docs/
 data/
 bundle/
 dist/
+# 参考数据（宿主机目录，只读挂载进容器；绝不应进构建上下文/镜像）
+.biodata/
+# 运行时状态（SQLite 检查点）与备份产物
+state/
+backups/
+# R 源码包（shared_data/*.tar.gz）：**不属于项目**（不在 git 中，别人从零 build 也没有），
+# 因此排除出构建上下文 —— 镜像里不会有它们，构建也默认不依赖它们。
+shared_data/*.tar.gz
+shared_data/*.tgz
+
+# 本机临时的"本地优先包源"（.local-r-repo/，见该目录 README）：
+# 它是**你自己的**网络缓解手段，不进 git、不进镜像 —— 注意这里**不排除**它，
+# 因为构建时需要以只读挂载的方式读它（只在你的机器上；别人没有这个目录也无妨）。
 *.rds
 *.pdf
 *.log

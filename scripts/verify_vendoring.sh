@@ -7,7 +7,7 @@
 #  并比对 digest 是否与清单一致。任一不符即退出码 1，可用于交付前卡口。
 #
 #  用法：
-#      export SCAGENT_REGISTRY=harbor.corp.local/scagent
+#      export SCAGENT_IMAGE_PREFIX=harbor.corp.local/scagent
 #      export SCAGENT_VERSION=1.0.0
 #      ./scripts/verify_vendoring.sh
 #
@@ -34,7 +34,8 @@ printf '%s\n\n' "═════════════════════
 
 [ -f "$LOCK" ] || { fail "找不到 $LOCK"; exit 1; }
 
-REG="${SCAGENT_REGISTRY:-}"
+# 镜像前缀：与 deploy/docker-compose.yml 同一套命名规则（旧名 SCAGENT_REGISTRY 仍兼容）
+REG="${SCAGENT_IMAGE_PREFIX:-${SCAGENT_REGISTRY:-}}"
 VER="${SCAGENT_VERSION:-1.0.0}"
 # RUNTIME_IMAGE 可能未导出（set -u 下直接引用会报 unbound variable）
 RUNTIME_VER="${RUNTIME_IMAGE:-}"
@@ -42,7 +43,7 @@ RUNTIME_VER="${RUNTIME_VER##*:}"
 [ -z "$RUNTIME_VER" ] && RUNTIME_VER="$VER"
 
 if [ -z "$REG" ]; then
-  fail "未设置 SCAGENT_REGISTRY"
+  fail "未设置 SCAGENT_IMAGE_PREFIX（旧名 SCAGENT_REGISTRY）"
   exit 1
 fi
 
@@ -87,9 +88,9 @@ check_image() {
 
 check_image "$REG/base/tidyverse:4.5.2"
 check_image "$REG/base/python:3.11-slim-bookworm"
-check_image "$REG/bio/scagent-runtime:$RUNTIME_VER"
-check_image "$REG/bio/scagent-seurat:$VER"
-check_image "$REG/bio/scagent-agent:$VER"
+check_image "$REG/scagent-runtime:$RUNTIME_VER"
+check_image "$REG/scagent-seurat:$VER"
+check_image "$REG/scagent-agent:$VER"
 
 # ── 3. 反向校验：确认清单里没有指向公网的条目 ─────────────────────────────────
 printf '\n%s\n' "── 3. 公网泄漏检查 ──"

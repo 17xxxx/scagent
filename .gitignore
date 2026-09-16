@@ -53,6 +53,12 @@ deploy/secrets/
 # 需要时由 scripts/install_r_deps.R 从镜像源安装
 shared_data/*.tar.gz
 
+# 本机临时的"R 源码包本地优先源"（网络缓解手段；不是项目内容）
+#   用法见 .local-r-repo/README.md；只保留说明与占位文件
+.local-r-repo/*
+!.local-r-repo/README.md
+!.local-r-repo/.gitkeep
+
 # 内部文档（本地保留备查，不公开、不推送）
 #   CHANGELOG / PROD_HANDOVER / DEPLOY_TUTORIAL 等含内部部署细节，
 #   不适合开源；如需彻底删除： rm -rf docs/

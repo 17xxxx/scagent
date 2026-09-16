@@ -71,7 +71,12 @@ guess_uid_from_dockerfile() {
 }
 
 info "[1/4] 探测容器有效 UID"
-for img in scagent-agent:dev "${SCAGENT_REGISTRY:-}"; do
+# 候选镜像：开发 tag → .env 里的发布镜像（前缀 + 版本）
+CANDIDATE_IMAGES=("scagent-agent:dev")
+if [ -n "${SCAGENT_IMAGE_PREFIX:-}" ] && [ -n "${SCAGENT_VERSION:-}" ]; then
+  CANDIDATE_IMAGES+=("${SCAGENT_IMAGE_PREFIX}/scagent-agent:${SCAGENT_VERSION}")
+fi
+for img in "${CANDIDATE_IMAGES[@]}"; do
   [ -z "$img" ] && continue
   u="$(probe_uid "$img")" && [ -n "$u" ] && { CONTAINER_UID="$u"; UID_SOURCE="运行时探测 ($img)"; break; }
 done
@@ -112,6 +117,18 @@ else
 fi
 
 # ── 3. 逐套检查密钥文件 ───────────────────────────────────────────────────────
+# 权限位是否可靠：drvfs（/mnt/*）、Git Bash、Windows 容器都不保留 POSIX 权限位，
+# 此时把"权限不是 600"降级为警告，否则会把用户引向一个改不动的方向（见 C3）。
+PERM_ENFORCE=1
+case "${SCAGENT_SECRETS_DIR:-}" in /mnt/*) PERM_ENFORCE=0 ;; esac
+case "$(uname -s 2>/dev/null || echo unknown)" in
+  MINGW*|MSYS*|CYGWIN*) PERM_ENFORCE=0 ;;
+esac
+if [ "$PERM_ENFORCE" -eq 0 ]; then
+  warn "当前文件系统/平台不保留 POSIX 权限位（drvfs / Git Bash / Windows）"
+  hint "权限相关项降级为警告；Windows 下请用 icacls 限制目录访问（deploy\\scagent.ps1 secrets 会自动做）"
+fi
+
 check_one_set() {   # check_one_set <名称> <目录>
   local label="$1" dir="$2"
   info "[3/4] $label 密钥目录: $dir"
@@ -138,7 +155,11 @@ check_one_set() {   # check_one_set <名称> <目录>
     local name; name="$(basename "$f")"
     local problems=()
 
-    [ "$perm" = "600" ] || problems+=("权限 $perm（建议 600）")
+    if [ "$PERM_ENFORCE" -eq 1 ]; then
+      [ "$perm" = "600" ] || problems+=("权限 $perm（建议 600）")
+    elif [ "$perm" != "600" ]; then
+      warn "$name 权限 $perm —— 当前文件系统不保留权限位，已降级为警告"
+    fi
     if [ -n "$CONTAINER_UID" ] && [ "$owner" != "$CONTAINER_UID" ]; then
       problems+=("属主 UID=$owner ≠ 容器 UID=$CONTAINER_UID")
     fi
