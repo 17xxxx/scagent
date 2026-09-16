@@ -76,6 +76,9 @@ scagent/
 面向部署者的完整说明见 **[DEPLOY.md](DEPLOY.md)**（Linux 与 Windows/Docker Desktop 两种单机部署、数据与参考数据集放置、日常运维），
 常见问题见 **[FAQ.md](FAQ.md)**。
 
+> 维护者发布镜像：`.github/workflows/publish-images.yml`（Actions 里手动触发，或 `git tag v1.0.0 && git push origin v1.0.0`），
+> 产物为 `ghcr.io/<owner>/scagent/scagent-{runtime,seurat,agent}:<版本>`；部署方把 `SCAGENT_IMAGE_PREFIX` 指到该前缀即可。
+
 > 下面这一节是**开发环境**（VS Code Dev Container）的快速开始。
 
 ## 快速开始
@@ -285,7 +288,7 @@ data/
 - 使用者需自行确保输入数据的**合规性与隐私安全**（样本知情同意、伦理审批、
   人类遗传资源管理、GDPR/《个人信息保护法》等适用的法规要求）
 - 本项目不收集、不上传任何数据；全部分析在自建环境中完成，
-  唯一的外部调用是 LLM API（可通过 `SCAGENT_LLM_PROVIDER=none` 完全关闭）
+  唯一的外部调用是 LLM API（改用本地模型可把它指向自己的服务）
 - 作者不对使用本工具产生的任何后果承担责任
 
 ## 依赖许可证

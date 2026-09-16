@@ -162,6 +162,27 @@ $env:APT_MIRROR="https://mirrors.aliyun.com/ubuntu"; deploy\scagent.cmd build -F
 
 3. **不构建**：使用已发布/私有 registry 的现成镜像（`SCAGENT_IMAGE_SOURCE=public|private`）。
 
+### 11c. 不想本地构建，直接用已发布镜像
+
+**处置**：配置时直接指定前缀，然后启动（本机没有镜像时会自动拉取，**不需要 `build`**）：
+
+```bash
+# Linux / WSL
+./deploy/configure.sh --image-source public \
+  --image-prefix crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen
+./deploy/up.sh
+```
+
+```powershell
+# Windows
+deploy\install.cmd -ImageSource public -ImagePrefix crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen
+```
+
+已经装好、只想换镜像源的，改 `deploy/.env` 的 `SCAGENT_IMAGE_PREFIX` 这两行再 `up` 也可以。
+
+上面这个前缀是中国大陆网络推荐的国内镜像，公开仓库、**不需要 `docker login`**；其他可选源见 `DEPLOY.md` §0。
+首次拉取约 **2.4 GB**（按压缩层计），之后启动只需几秒。注意前缀里**不要**再拼 `scagent-` —— 镜像名由程序拼成 `<前缀>/scagent-<服务>:<版本>`。
+
 ### 12. 服务拉不到镜像 / 提示认证失败（私有 registry）
 
 **处置**：
@@ -204,11 +225,16 @@ docker login <你的 registry>
 
 ### 16. 想只跑确定性流水线（不调用 LLM）
 
-把 `deploy/.env` 的 `SCAGENT_LLM_PROVIDER` 设为 `none`（或 `ollama` 走本地模型），也可以直接用容器内的确定性 CLI：
+**先说清一个边界**：网页界面（agent 服务）**必须有可用的 LLM** —— 启动时会校验
+`SCAGENT_LLM_PROVIDER` 与密钥，不通过就直接退出、容器反复重启。所以"不调用 LLM"指的是
+**绕开网页界面**，直接用容器内的确定性 CLI（它不走 LLM）：
 
 ```bash
 docker compose -f deploy/docker-compose.yml exec agent python /workspace/agent_core/pipeline_cli.py status
 ```
+
+想保留网页界面但不想用云端 API，可以把 `SCAGENT_LLM_PROVIDER` 设为 `ollama` 指向本地模型服务
+（这条路不需要密钥文件）。
 
 ---
 

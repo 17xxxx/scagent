@@ -20,11 +20,64 @@
 
 | 路径 | 适用场景 | 首次耗时 |
 |---|---|---|
-| **A. 本机构建**（默认） | 内网 / 离线环境，没有私有 registry | 30–90 分钟（多数时间在安装 R 包） |
-| **B. 使用已发布镜像** | 已有公开仓库（如 GHCR）或私有 registry | 几分钟（拉取） |
+| **A. 本机构建**（默认） | 内网 / 离线环境，拉不到任何镜像仓库 | 30–90 分钟（多数时间在安装 R 包） |
+| **B. 使用已发布镜像**（推荐） | 能访问公网镜像仓库 | 几分钟（只拉取） |
 
 由 `deploy/.env` 的 `SCAGENT_IMAGE_SOURCE` 决定：`local`（本机构建）/ `public`（公开发布）/ `private`（自有 registry）。
 三者只是**镜像地址不同**，运行时行为完全一致。
+
+### 已发布的镜像
+
+| 镜像源 | `SCAGENT_IMAGE_PREFIX` 填什么 | 说明 |
+|---|---|---|
+| **阿里云 ACR**（中国大陆推荐） | `crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen` | 公开仓库，**无需登录**，国内拉取快 |
+
+**用法（一条命令）** —— 生成配置时直接指定前缀，然后启动即可，**不需要 `build`**：
+
+```bash
+# Linux / WSL
+./deploy/configure.sh --image-source public \
+  --image-prefix crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen
+./deploy/up.sh            # 本机没有镜像时会自动拉取
+./deploy/verify.sh
+```
+
+```powershell
+# Windows（install 会一路装到启动）
+deploy\install.cmd -ImageSource public -ImagePrefix crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen
+```
+
+**已经装好、只想换成已发布镜像**：改 `deploy/.env` 里这两行，再 `up` 一次即可：
+
+```ini
+SCAGENT_IMAGE_SOURCE=public
+SCAGENT_IMAGE_PREFIX=crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen
+SCAGENT_VERSION=1.0.0
+```
+
+```bash
+# 改完之后
+./deploy/up.sh            # Windows： deploy\scagent.cmd up
+```
+
+```powershell
+deploy\scagent.cmd up
+deploy\scagent.cmd verify
+```
+
+只想先把镜像拉下来看看（不启动服务）：
+
+```bash
+docker pull crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen/scagent-seurat:1.0.0
+docker pull crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen/scagent-agent:1.0.0
+```
+
+> **前缀里不要自己再拼 `scagent-`** —— 程序会补上：镜像名 = `<前缀>/scagent-<服务>:<版本>`。
+> 例如前缀 `…/sqxopen` 对应镜像 `…/sqxopen/scagent-seurat:1.0.0`。
+>
+> 首次拉取约 **2.4 GB**（`scagent-seurat` 2.28 GB + `scagent-agent` 0.08 GB，按压缩层计），之后启动只需几秒。
+> `docker images` 里显示的约 8 GB 是**解压口径**，不是下载量。
+> `scagent-runtime` 只有需要自己重建 `seurat` 层的人才要拉，普通部署用不到。
 
 ---
 
@@ -87,6 +140,10 @@ deploy\install.cmd             # 双击也可以
 
 ### 也可以手写 `deploy/.env`
 
+> **LLM API Key 不能缺**：agent 启动时会先校验 LLM 配置，缺密钥会直接退出、容器反复重启。
+> 想先跑起来再补密钥也可以，但补上之前服务不可用；只想跑确定性流水线（不经过网页界面）请用
+> `pipeline_cli.py`（见 `FAQ.md`）。用本地模型（`SCAGENT_LLM_PROVIDER=ollama`）则不需要密钥文件。
+
 ```ini
 SCAGENT_IMAGE_SOURCE=local
 SCAGENT_IMAGE_PREFIX=scagent
@@ -119,7 +176,7 @@ SCAGENT_PORT=8080
 2. 路径写**绝对路径**、用**正斜杠**（如 `D:/scagent/workspace`），结尾不要带斜杠。
 
 可选参数（写在 `.env` 里）：`SCAGENT_HITL`（`interactive` 默认 / `auto_approve` / `deny_all`）、
-`SCAGENT_MAX_CONCURRENT_RUNS`、`SCAGENT_TOOL_RUN_LIMIT`、`SCAGENT_LLM_MODEL`、`SCAGENT_LLM_PROVIDER`（`deepseek` / `ollama` / `none`）。
+`SCAGENT_MAX_CONCURRENT_RUNS`、`SCAGENT_TOOL_RUN_LIMIT`、`SCAGENT_LLM_MODEL`、`SCAGENT_LLM_PROVIDER`（`deepseek` 默认 / `ollama` 本地模型）。
 
 ---
 
