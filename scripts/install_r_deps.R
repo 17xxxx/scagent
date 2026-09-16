@@ -2,10 +2,10 @@
 # ╔══════════════════════════════════════════════════════════════════════════════╗
 # ║  scripts/install_r_deps.R —— 构建期安装 R 依赖（含预检与多源回退）            ║
 # ║                                                                              ║
-# ║  踩过的坑（保留记录以免重蹈）：                                                 ║
-# ║    1. ❌ 曾把 Bioconductor 源写成 packagemanager.posit.co/bioconductor/...     ║
-# ║           —— 该路径实测全部 404，PPM 不提供这种格式的镜像。                    ║
-# ║    2. ❌ 曾写 pak::pkg_install(pkgs, repos = repos)                          ║
+# ║  两条源码格式约束：                                                            ║
+# ║    1. ❌ 不要用 packagemanager.posit.co/bioconductor/... 作为 Bioconductor 源  ║
+# ║           —— 该路径全部 404，PPM 不提供这种格式的镜像。                        ║
+# ║    2. ❌ 不要写 pak::pkg_install(pkgs, repos = repos)                        ║
 # ║           —— **pak 的 pkg_install() 没有 repos 参数**（报 unused argument）。  ║
 # ║           pak 从 options(repos) 与 BiocManager 读取仓库，必须用 options() 设置。║
 # ║                                                                              ║

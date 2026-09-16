@@ -130,8 +130,8 @@ scagent_load_refdata <- function(species = "mouse") {
   ref_file <- file.path(ref_dir, ref_name)
   if (!file.exists(ref_file)) {
     stop("参考集缺失: ", ref_file,
-         "\n请先在宿主机执行 scripts/download_data.sh 下载参考数据（见部署文档 §9.6）。",
-         "\n数据卷挂载约定: /data/biodata -> ", ref_dir, " (只读)")
+         "\n请先在宿主机执行 scripts/fetch_refdata.sh 获取参考数据（详见 DEPLOY.md §5）。",
+         "\n挂载约定：宿主机 SCAGENT_BIODATA 目录 -> 容器 ", ref_dir, "（只读）")
   }
   readRDS(ref_file)
 }

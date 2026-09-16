@@ -4,9 +4,9 @@
 # ║  这是「搬运一次、很少重建」的重型镜像（≈4 GB），包含：                       ║
 # ║    rocker/tidyverse + 系统依赖 + 108 个 R 包（17 个直接依赖的完整闭包）      ║
 # ║                                                                              ║
-# ║为什么要和应用层分开：                                                        ║
-# ║    把"很少变的第三方运行时"与"天天变的业务代码"拆开，                        ║
-# ║    改一行 R 代码时只需重建约 10 MB 的应用层，而不是重装 108 个包。           ║
+# ║  分层方式：                                                                  ║
+# ║    第三方运行时（很少变化）与应用代码（经常变化）分成两层：                  ║
+# ║    改一行 R 代码只需重建约 10 MB 的应用层，不必重装 108 个包。               ║
 # ║                                                                              ║
 # ║  构建机要求：能访问 PPM（CRAN + Bioconductor 二进制源）                      ║
 # ║  部署机要求：无 —— 只需要从私有 registry 拉取本镜像                          ║
@@ -26,9 +26,8 @@ LABEL scagent.component="runtime" \
 #         --build-arg APT_MIRROR=https://mirrors.aliyun.com/ubuntu runtime
 #   或在 deploy/.env 里写一行 `APT_MIRROR=https://mirrors.aliyun.com/ubuntu`
 #   （build.sh / deploy\scagent.cmd build 会自动透传）。
-#   ⚠️ 请**在首次构建前**决定：apt 层一旦改变，其上的所有层（含 R 包安装，30–90 分钟）都要重建
-#      —— 这是 Docker 分层机制的必然结果（实测：只改一个只在前一步使用的构建参数，
-#      后续不引用它的步骤也会失去缓存）。
+#   ⚠️ 请在**首次构建前**决定：apt 层改变后，其上的所有层（含 R 包安装，30–90 分钟）都会重建。
+#      这是 Docker 分层的机制：构建参数变化会引起该层及其后续层缓存失效。
 ARG APT_MIRROR=""
 RUN if [ -n "$APT_MIRROR" ]; then \
       echo "使用 apt 镜像源: $APT_MIRROR"; \
@@ -57,19 +56,18 @@ RUN R -e "if (!requireNamespace('BiocManager', quietly=TRUE)) \
 # ═══════════════════════════════════════════════════════════════════════════════
 #  包源配置
 #
-#  ⚠️ 历史踩坑（两条，都已修）：
-#    1. Bioconductor 源曾写成 packagemanager.posit.co/bioconductor/...
-#       —— 该路径实测**全部 404**，PPM 不提供这种格式的 Bioconductor 镜像。
-#    2. 曾写 pak::pkg_install(pkgs, repos = repos)
-#       —— **pak 的 pkg_install() 没有 repos 参数**，会报 unused argument。
-#          pak 从 options(repos) 读取仓库，必须用 options() 设置。
+#  ⚠️ 两条源码格式约束：
+#    1. Bioconductor 不要用 packagemanager.posit.co/bioconductor/... ——
+#       PPM 不提供这种格式的 Bioconductor 镜像，该路径全部 404。
+#    2. pak::pkg_install() 没有 repos 参数（会报 unused argument）；
+#       pak 从 options(repos) 读取仓库，必须用 options() 设置。
 #
-#  实测结论：
-#    CRAN   : PPM 的 Linux 二进制源免编译最快，但可能不稳定 → 回退清华源
-#    Bioc   : bioconductor.org 国内不稳定；西湖大学镜像三个子仓实测均 200 → 优先
+#  源选择：
+#    CRAN : PPM 的 Linux 二进制源免编译，速度最快；不可用时回退清华源
+#    Bioc : bioconductor.org 在国内不稳定；西湖大学镜像三个子仓均可访问，优先使用
 #
 #  BiocManager 与脚本都按 ${BIOC_ROOT}/packages/${版本}/${子仓} 拼 URL，
-#  因此只需给一个镜像根即可（已验证与 BiocManager 的拼法一致）。
+#  因此只需给一个镜像根即可（与 BiocManager 的拼法一致）。
 #
 #  换成内网镜像时用 --build-arg 覆盖，无需改本文件。
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -100,11 +98,10 @@ RUN --mount=type=cache,target=/root/.cache/R/pkgcache \
 
 # ── presto：本地 zip 安装（不在 CRAN/Bioc 上）─────────────────────────────────
 COPY shared_data/presto-master.zip /tmp/presto-master.zip
-#   ⚠️ 两个坑（都实测踩过）：
-#      1) dependencies=FALSE 时不会装 LinkingTo 依赖（presto 需要 RcppArmadillo）
-#         → 安装失败；
-#      2) install_local() 失败时**只报 warning**，`R -e` 仍以 0 退出 → 静默漏装。
-#   因此这里：依赖交给解算器（Depends/Imports/LinkingTo），并追加一条硬断言。
+#   ⚠️ 两条约束：
+#      1) dependencies=FALSE 不会安装 LinkingTo 依赖（presto 需要 RcppArmadillo），安装会失败；
+#      2) install_local() 失败时只报 warning，`R -e` 仍以 0 退出，会静默漏装。
+#   因此这里把依赖交给解算器（Depends/Imports/LinkingTo），并追加一条硬断言。
 RUN R -e "if(!requireNamespace('remotes', quietly=TRUE)) \
             install.packages('remotes', repos='https://cloud.r-project.org'); \
           remotes::install_local('/tmp/presto-master.zip', upgrade='never', \
@@ -135,12 +132,11 @@ RUN R -e "writeLines(capture.output(sessionInfo()), '/opt/scagent-R-sessionInfo.
 
 WORKDIR /workspace
 
-# ── 非 root 运行（与 agent 镜像对称，见 C9 / 决-13）──────────────────────────
+# ── 非 root 运行（与 agent 镜像一致）─────────────────────────────────────────
 #   容器以 uid 1000 运行：产物写进挂载卷时，宿主侧的属主就是部署用户，
-#   不会再出现"root 写进去、普通用户删不掉"的问题（已实测：容器内 root 写新文件
-#   在宿主侧属主为 root(0)；agent 的 uid 1000 写的文件属主就是 1000）。
+#   不会出现"root 写进去、普通用户删不掉"的情况。
 #   注意：**不要** useradd —— rocker/tidyverse 基镜像自带 uid 1000 的用户
-#   （rstudio，HOME=/home/rstudio，已实测该 HOME 可写），再建会以退出码 4 失败。
+#   （rstudio，HOME=/home/rstudio，可写），再建会以退出码 4 失败。
 #   R 包都装在系统目录（root 所有、全局可读），运行期不需要写 /usr/local/lib；
 #   运行期产物一律走 SCAGENT_DATA_DIR（/data）。
 RUN mkdir -p /workspace && chown 1000:1000 /workspace

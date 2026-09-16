@@ -474,7 +474,7 @@ run_quality_control <- function(...) {
 
   # Harmony 批次校正
   if (run_harmony) {
-    # harmony 2.x 改了参数名（实测 2.0.5）：
+    # harmony 2.x（2.0.5 起）改了参数名：
     #   max.iter.harmony → max_iter；max.iter.cluster 已被移除（改由 early_stop 控制）
     # 传旧名会直接报 "The parameter max.iter.harmony is replaced with parameter max_iter"。
     # 这里按安装的版本构造参数，两个大版本都能跑。
