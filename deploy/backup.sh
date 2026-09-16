@@ -23,6 +23,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# 共享库：.env 去 CR 加载（Windows 编辑器写入的 .env 带 \r，会让脱敏/路径解析出错）
+# shellcheck source=lib/image-source.sh
+. "$ROOT/deploy/lib/image-source.sh"
+
 C_R=$'\033[31m'; C_G=$'\033[32m'; C_Y=$'\033[33m'; C_B=$'\033[36m'; C_0=$'\033[0m'
 ok()   { printf '  %s\n' "${C_G}✅${C_0} $*"; }
 warn() { printf '  %s\n' "${C_Y}⚠️ ${C_0} $*"; }
@@ -42,16 +46,12 @@ while [ $# -gt 0 ]; do
 done
 
 [ -f deploy/.env ] || { echo "❌ 缺少 deploy/.env" >&2; exit 1; }
-set -a; . deploy/.env; set +a
+scagent_load_env deploy/.env
 
-# 相对路径统一以 deploy/ 为基准（与 docker compose 的解析规则一致）
-resolve_rel() {
-  case "$1" in
-    /*) printf '%s' "$1" ;;
-    *)  printf '%s' "$ROOT/deploy/$1" ;;
-  esac
-}
-WORKSPACE="$(resolve_rel "${SCAGENT_WORKSPACE:-../workspace}")"
+WORKSPACE="$(scagent_resolve_path "${SCAGENT_WORKSPACE:?deploy/.env 中未设置 SCAGENT_WORKSPACE}")"
+
+# 密钥目录：建议在仓库之外（见 deploy/.env.sample），相对路径以 deploy/ 为基准
+SECRETS_DIR="$(scagent_resolve_path "${SCAGENT_SECRETS_DIR:-./secrets}")"
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$OUT_DIR"
@@ -94,17 +94,17 @@ fi
 
 # ── 4. 密钥（默认排除）────────────────────────────────────────────────────────
 if [ "$WITH_SECRETS" -eq 1 ]; then
-  if [ -d deploy/secrets ]; then
-    mkdir -p "$STAGE/deploy"
-    cp -a deploy/secrets "$STAGE/deploy/"
-    warn "已按 --include-secrets 打包 deploy/secrets/ —— 请确保备份介质已加密"
+  if [ -d "$SECRETS_DIR" ]; then
+    mkdir -p "$STAGE/secrets"
+    cp -a "$SECRETS_DIR/." "$STAGE/secrets/"
+    warn "已按 --include-secrets 打包 $SECRETS_DIR —— 请确保备份介质已加密"
   else
-    echo "  （--include-secrets 已指定，但 deploy/secrets/ 不存在）"
+    echo "  （--include-secrets 已指定，但 $SECRETS_DIR 不存在）"
   fi
 else
-  warn "已排除密钥目录 deploy/secrets/（如需一并备份，加 --include-secrets）"
+  warn "已排除密钥目录 $SECRETS_DIR（如需一并备份，加 --include-secrets）"
   # 双保险：万一 secrets 被误复制进 stage
-  rm -rf "$STAGE/deploy/secrets"
+  rm -rf "$STAGE/deploy/secrets" "$STAGE/secrets"
 fi
 
 # ── 5. 打包 ───────────────────────────────────────────────────────────────────

@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
-#  deploy/up.sh —— 启动/更新 scAgent 服务（服务器侧）
+#  deploy/up.sh —— 启动/更新 scAgent 服务（单机 / 服务器）
 #
-#  这是服务器上**唯一允许发起网络请求**的动作，且只允许访问私有 registry。
-#  设计依据：镜像只从私有 registry 拉取，绝不回落公网
-#    · 强制要求 SCAGENT_REGISTRY，缺失即报错 —— 绝不静默回落公网 Docker Hub
-#    · 显式拒绝 docker.io / index.docker.io / registry-1.docker.io
-#    · 拉取动作集中在此处，docker-compose.yml 里用 pull_policy: never
+#  这是部署机上**唯一允许发起网络请求**的动作，且只允许访问 .env 指定的镜像来源。
+#  设计依据：镜像名只有一个来源（SCAGENT_IMAGE_PREFIX），绝不静默回落公网
+#    · local    本机 build 产物，强制不拉取（never）
+#    · public   公开发布（如 ghcr.io/...）
+#    · private  自有 registry
+#    · 三种来源都显式拒绝 docker.io / index.docker.io / registry-1.docker.io 命名空间
+#    · 解析逻辑集中在 deploy/lib/image-source.sh，本脚本不再自行拼镜像名
 # ═══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -21,21 +23,15 @@ die()  { printf '%s\n' "  ${C_R}❌${C_0} $*" >&2; exit 1; }
 
 # ── 1. 载入配置 ───────────────────────────────────────────────────────────────
 [ -f deploy/.env ] || die "缺少 deploy/.env。请先：cp deploy/.env.sample deploy/.env && chmod 600 deploy/.env && vi deploy/.env"
-set -a
-# shellcheck disable=SC1091
-. deploy/.env
-set +a
+# shellcheck source=lib/image-source.sh
+. "$ROOT/deploy/lib/image-source.sh"
+scagent_load_env deploy/.env          # 去 CR 后再 source（Windows 编辑器写入的 .env 带 \r 会让鉴权 401）
 
-: "${SCAGENT_REGISTRY:?deploy/.env 中未设置 SCAGENT_REGISTRY}"
 : "${SCAGENT_VERSION:?deploy/.env 中未设置 SCAGENT_VERSION}"
 
 # ── 密钥方式自动判定 ─────────────────────────────────────────────────────────
 #   优先 Docker secrets（与开发环境完全一致）；缺失时回退到 deploy/.env 环境变量。
-SECRETS_DIR_RAW="${SCAGENT_SECRETS_DIR:-./secrets}"
-case "$SECRETS_DIR_RAW" in
-  /*) SECRETS_DIR="$SECRETS_DIR_RAW" ;;
-  *)  SECRETS_DIR="$ROOT/${SECRETS_DIR_RAW#./}" ;;
-esac
+SECRETS_DIR="$(scagent_resolve_path "${SCAGENT_SECRETS_DIR:-./secrets}")"
 COMPOSE_FILES=(-f deploy/docker-compose.yml)
 
 if [ -f "$SECRETS_DIR/deepseek_api_key" ] && [ -f "$SECRETS_DIR/scagent_token" ]; then
@@ -59,18 +55,31 @@ else
   ok "密钥方式：环境变量（deploy/.env）"
 fi
 
-# ── 2. 公网 registry 白名单校验（防止偷偷摸公网）──────────────────────────────
-info "校验 registry 地址"
-case "$SCAGENT_REGISTRY" in
-  docker.io*|*.docker.io*|registry-1.docker.io*|index.docker.io*|scagent|scagent/*|library/*)
-    die "拒绝从公网 registry 拉取: $SCAGENT_REGISTRY
-    服务器必须只从私有 registry 取镜像。请把它改成内网地址，例如 harbor.corp.local/scagent" ;;
-esac
-case "$SCAGENT_REGISTRY" in
-  *.*|*:*|localhost*) ;;                       # 含点/冒号，像一个真实主机名
-  *) die "SCAGENT_REGISTRY 看起来不是合法的主机名: $SCAGENT_REGISTRY" ;;
-esac
-ok "私有 registry: $SCAGENT_REGISTRY  (版本 $SCAGENT_VERSION)"
+# ── 2. 镜像来源解析 + 公网回落防护 ────────────────────────────────────────────
+#   唯一拼接规则：<SCAGENT_IMAGE_PREFIX>/scagent-<svc>:<SCAGENT_VERSION>（A4）
+info "解析镜像来源"
+scagent_resolve_image
+ok "来源: $SCAGENT_IMAGE_SOURCE   前缀: $SCAGENT_IMAGE_PREFIX   版本: $SCAGENT_VERSION"
+ok "拉取策略: $SCAGENT_PULL_POLICY"
+SEURAT_IMG="$(scagent_image seurat)"
+AGENT_IMG="$(scagent_image agent)"
+
+if [ "$SCAGENT_PULL_POLICY" = "never" ]; then
+  missing=""
+  for img in "$SEURAT_IMG" "$AGENT_IMG"; do
+    docker image inspect "$img" >/dev/null 2>&1 || missing="$missing $img"
+  done
+  if [ -n "$missing" ]; then
+    die "本地缺少镜像：$missing
+      local 模式不会联网拉取。请二选一：
+        · 先构建（注意两步顺序，否则应用层会去 Docker Hub 找 runtime 镜像而失败）：
+            docker compose -f deploy/docker-compose.build.yml build runtime
+            docker compose -f deploy/docker-compose.build.yml build seurat agent
+          Windows 用户可直接： deploy\\scagent.cmd build
+        · 或改用发布镜像：把 deploy/.env 的 SCAGENT_IMAGE_SOURCE 改成 public"
+  fi
+  ok "本地镜像已就绪（不联网拉取）"
+fi
 
 # ── 2.5 密钥可读性预检 ────────────────────────────────────────────────────────
 #  Docker Compose 的 file 型 secret 底层是 bind mount：容器能否读取由
@@ -91,43 +100,46 @@ for f in deploy/docker-compose.yml; do
   [ -f "$f" ] || die "缺少 $f"
 done
 
-# 相对路径统一以 deploy/ 为基准（与 docker compose 的解析规则一致）
-resolve_workspace() {
-  case "$1" in
-    /*) printf '%s' "$1" ;;
-    *)  printf '%s' "$ROOT/deploy/$1" ;;
-  esac
-}
-
-WORKSPACE="$(resolve_workspace "${SCAGENT_WORKSPACE:-../workspace}")"
+WORKSPACE="$(scagent_resolve_path "${SCAGENT_WORKSPACE:?deploy/.env 中未设置 SCAGENT_WORKSPACE}")"
 mkdir -p "$WORKSPACE/data/rawdata" "$WORKSPACE/state"
 ok "工作目录: $WORKSPACE"
 
-BIODATA="${SCAGENT_BIODATA:-/data/biodata}"
+BIODATA="$(scagent_resolve_path "${SCAGENT_BIODATA:?deploy/.env 中未设置 SCAGENT_BIODATA}")"
 if [ -d "$BIODATA" ]; then
   ok "参考数据目录: $BIODATA"
 else
   warn "参考数据目录不存在: $BIODATA"
-  warn "  细胞注释（Step 4）会失败。请先执行: scripts/download_data.sh --target $BIODATA"
+  warn "  细胞注释（Step 4）会失败。一次性获取（需要外网）: ./scripts/fetch_refdata.sh"
+  warn "  （离线环境或有自建对象存储时: scripts/download_data.sh --target $BIODATA）"
 fi
 
 # ── 4. 保留当前版本镜像（供 rollback.sh 回滚）────────────────────────────────
 info "保留当前版本标签 :prev（供回滚）"
-for svc in scagent-runtime scagent-seurat scagent-agent; do
-  cur="${SCAGENT_REGISTRY}/bio/${svc}:${SCAGENT_VERSION}"
+for svc in runtime seurat agent; do
+  cur="$(scagent_image "$svc")"
   if docker image inspect "$cur" >/dev/null 2>&1; then
-    docker tag "$cur" "${SCAGENT_REGISTRY}/bio/${svc}:prev" 2>/dev/null || true
+    if ! docker tag "$cur" "${SCAGENT_IMAGE_PREFIX}/scagent-${svc}:prev" 2>/dev/null; then
+      warn "打 :prev 标签失败（不影响本次启动，但 rollback 会不可用）: $cur"
+      continue
+    fi
     ok "$svc → :prev"
+  else
+    warn "$svc 镜像不在本地，跳过 :prev: $cur"
   fi
 done
 
 # ── 5. 拉取并启动 ─────────────────────────────────────────────────────────────
 COMPOSE=(docker compose "${COMPOSE_FILES[@]}")
-info "从私有 registry 拉取镜像（服务器唯一联网动作）"
-"${COMPOSE[@]}" pull
+if [ "$SCAGENT_PULL_POLICY" = "never" ]; then
+  info "跳过拉取（local 模式，使用本地镜像）"
+else
+  info "拉取镜像（唯一联网动作）：$SCAGENT_IMAGE_PREFIX"
+  "${COMPOSE[@]}" pull
+fi
 
 info "启动服务"
-"${COMPOSE[@]}" up -d --force-recreate
+# --pull 显式传参，不依赖 compose 对 pull_policy 的插值行为
+"${COMPOSE[@]}" up -d --force-recreate --pull "$SCAGENT_PULL_POLICY"
 
 info "等待健康检查通过（seurat 冷启动约需 120 秒）"
 for i in $(seq 1 60); do
@@ -156,6 +168,9 @@ fi
 PORT="${SCAGENT_PORT:-8080}"
 printf '\n%s\n' "────────────────────────────────────────────────────────────"
 ok "部署完成"
-printf '    访问地址: http://<服务器IP>:%s\n' "$PORT"
+case "${SCAGENT_BIND_ADDR:-127.0.0.1}" in
+  127.0.0.1) printf '    访问地址: http://127.0.0.1:%s  （仅本机）\n' "$PORT" ;;
+  *)         printf '    访问地址: http://<本机IP>:%s  （局域网；请确认防火墙已放行）\n' "$PORT" ;;
+esac
 printf '    下一步  : 把 10X 数据放入 %s/data/rawdata/<样本名>/\n' "$WORKSPACE"
 printf '    使用    : 浏览器打开上面的地址，或 client/scagent.py ask "帮我做质控"\n'
