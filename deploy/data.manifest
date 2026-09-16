@@ -1,24 +1,31 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-#  deploy/data.manifest —— 参考数据版本清单
+#  deploy/data.manifest —— 参考数据集清单
 #
 #  数据与软件是两套独立的分发系统：
-#    · 软件（镜像）→ 私有 registry
-#    · 数据（参考集）→ 对象存储，由 scripts/download_data.sh 拉取
+#    · 软件（镜像）→ 镜像仓库：celldex 等 R 包随镜像构建自动安装（1.5 MB）
+#    · 数据（参考集）→ 宿主机目录：体积大，**不进镜像**，由部署者准备
+#
+#  本项目实际需要的文件（放入 <SCAGENT_BIODATA>/celldex/，容器内只读挂载到 /ref/celldex）：
+#      MouseRNAseqData.rds            小鼠（默认）
+#      HumanPrimaryCellAtlasData.rds  人类
+#  一次性获取（推荐，需要外网）：
+#      ./scripts/fetch_refdata.sh                       # Linux / WSL
+#      deploy\scagent.cmd refdata                       # Windows
+#  —— 它用临时容器（带外网）调用 celldex 下载并直接写到上面的目录；
+#     生产容器仍然离线、只读挂载，运行期不联网。
+#
+#  本文件只在**自建对象存储**时才需要：把 .rds 打包上传后，用
+#  scripts/download_data.sh 做带 sha256 校验的下载。
 #
 #  格式（空白分隔，支持 # 注释行）：
 #      <name>  <version>  <sha256>
-#
-#  下载后的落盘结构：
-#      /data/biodata/<name>/<name>-<version>.tar.gz   → 解包到 /data/biodata/<name>/
-#  容器内挂载：
-#      /data/biodata:/ref:ro      且 SCAGENT_REFDATA_DIR=/ref/celldex
-#
-#  注意：sha256 必须替换为真实值。生成方式：
-#      sha256sum celldex-2026.1.tar.gz
+#  说明：<name> 需与 scripts/download_data.sh 拼出的归档名一致
+#        （<name>-<version>.tar.gz）；<sha256> 请用 sha256sum 实测值替换。
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# name      version   sha256
-celldex     2026.1    REPLACE_WITH_REAL_SHA256
+# name                        version   sha256
+MouseRNAseqData              1.0       REPLACE_WITH_REAL_SHA256
+HumanPrimaryCellAtlasData    1.0       REPLACE_WITH_REAL_SHA256
 
 # ── 后续可扩展（示例，勿直接启用）────────────────────────────────────────────
 # 参考基因组、注释 GTF、多物种图谱等大型数据都加在这里。

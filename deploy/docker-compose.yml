@@ -1,14 +1,21 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-#  deploy/docker-compose.yml —— 生产运行编排（服务器侧）
+#  deploy/docker-compose.yml —— 生产运行编排（单机 / 服务器通用）
 #
-#  唯一部署路径：构建机 build → push 私有 registry → 服务器 pull
+#  镜像来源三选一（见 deploy/.env.sample、docs/ISSUES_AND_PLAN.md §7.3）：
+#    · local    本机 build 产物（前缀默认 scagent）
+#    · public   公开发布的镜像（前缀默认 ghcr.io/17xxxx/scagent）
+#    · private  自有 registry（如 harbor.corp.local/scagent）
+#  三者的镜像名**只用** ${SCAGENT_IMAGE_PREFIX} + ${SCAGENT_VERSION} 拼接 ——
+#  这是 A4（命名空间不一致）的唯一来源，不允许第二套拼法。
 #
 #  设计要点：
-#    1. SCAGENT_REGISTRY 用 `:?` 强制必填 —— 缺失时 compose 立即报错退出，
-#       绝不静默回落到公网 Docker Hub 命名空间（PROD_HANDOVER）。
-#    2. pull_policy: never —— 本文件不发起任何拉取；拉取只在 up.sh 里显式进行。
+#    1. 关键变量用 `:?` 强制必填 —— 缺失时 compose 立即报错退出，
+#       绝不静默回落到公网 Docker Hub 命名空间。
+#    2. 拉取策略由 SCAGENT_PULL_POLICY 控制（local→never，其余→missing）；
+#       脚本另用 `docker compose up --pull <policy>` 显式传参，不依赖本字段插值。
 #    3. seurat 挂在 internal 网络上，物理上没有外网路由，运行期不可能下载任何东西。
-#    4. 参考数据以只读卷挂载，不进镜像（PROD_HANDOVER/§3.3）。
+#    4. 参考数据以只读卷挂载，不进镜像。
+#    5. 数据挂 /data、状态挂 /state —— **不再挂 /workspace**，避免遮蔽镜像内的 R 代码（A1）。
 # ═══════════════════════════════════════════════════════════════════════════════
 
 name: scagent
@@ -17,17 +24,17 @@ services:
 
   # ── R 生信后端（无外网）────────────────────────────────────────────────────
   seurat:
-    image: ${SCAGENT_REGISTRY:?SCAGENT_REGISTRY 必须设置，例如 harbor.corp.local/scagent}/scagent-seurat:${SCAGENT_VERSION:?SCAGENT_VERSION 必须设置}
-    pull_policy: never
+    image: ${SCAGENT_IMAGE_PREFIX:?SCAGENT_IMAGE_PREFIX 必须设置，见 deploy/.env.sample}/scagent-seurat:${SCAGENT_VERSION:?SCAGENT_VERSION 必须设置}
+    pull_policy: ${SCAGENT_PULL_POLICY:-never}
     networks:
       - core                      # core 是 internal，无默认路由
     volumes:
-      - "${SCAGENT_WORKSPACE:-../workspace}:/workspace"
-      - "${SCAGENT_BIODATA:-/data/biodata}:/ref:ro"     # ★ 参考数据：只读挂载
+      - "${SCAGENT_WORKSPACE:?SCAGENT_WORKSPACE 必须设置（数据与产物目录）}/data:/data"
+      - "${SCAGENT_BIODATA:?SCAGENT_BIODATA 必须设置（参考数据目录）}:/ref:ro"   # ★ 参考数据：只读挂载
     environment:
-      SCAGENT_DATA_DIR: /workspace/data
-      SCAGENT_BACKEND_DIR: /workspace/seurat_backend
+      SCAGENT_DATA_DIR: /data
       SCAGENT_REFDATA_DIR: /ref/celldex
+      SCAGENT_HOST_WORKSPACE: ${SCAGENT_WORKSPACE}   # 仅用于错误提示：告诉用户宿主机该放哪
       SCAGENT_API_HOST: 0.0.0.0
       SCAGENT_API_PORT: "9000"
     restart: unless-stopped
@@ -42,22 +49,25 @@ services:
 
   # ── Agent 服务（唯一有外网的容器，且只用于 LLM）────────────────────────────
   agent:
-    image: ${SCAGENT_REGISTRY:?}/scagent-agent:${SCAGENT_VERSION:?}
-    pull_policy: never
+    image: ${SCAGENT_IMAGE_PREFIX:?}/scagent-agent:${SCAGENT_VERSION:?}
+    pull_policy: ${SCAGENT_PULL_POLICY:-never}
     networks:
       - core
       - egress                    # 唯一能出网的容器
     ports:
-      - "127.0.0.1:${SCAGENT_PORT:-8080}:8080"    # 由反向代理暴露，不直接对公网
+      # 默认只对本机开放；局域网访问改成 SCAGENT_BIND_ADDR=0.0.0.0（另需放行防火墙）
+      - "${SCAGENT_BIND_ADDR:-127.0.0.1}:${SCAGENT_PORT:-8080}:8080"
     env_file:
       - .env
     environment:
       SEURAT_API_BASE: http://seurat:9000
-      SCAGENT_DATA_DIR: /workspace/data
-      SCAGENT_STATE_DIR: /workspace/state
+      SCAGENT_DATA_DIR: /data
+      SCAGENT_STATE_DIR: /state
+      SCAGENT_HOST_WORKSPACE: ${SCAGENT_WORKSPACE}   # 仅用于错误提示：告诉用户宿主机该放哪
       SCAGENT_API_PORT: "8080"
     volumes:
-      - "${SCAGENT_WORKSPACE:-../workspace}:/workspace"
+      - "${SCAGENT_WORKSPACE:?}/data:/data"
+      - "${SCAGENT_WORKSPACE:?}/state:/state"
     depends_on:
       seurat:
         condition: service_healthy
@@ -70,10 +80,38 @@ services:
       retries: 5
       start_period: 30s
 
+  # ── 反向代理（可选，需要域名 / HTTPS 时才启用）──────────────────────────────
+  #  启用： docker compose -f deploy/docker-compose.yml --profile proxy up -d
+  #  仅本机使用**不需要**启用它；启用前请在 .env 里设置 SCAGENT_DOMAIN。
+  #  注意：不用 `--network host`（Docker Desktop 不支持），改为端口映射 + compose 网络。
+  proxy:
+    image: ${SCAGENT_PROXY_IMAGE:-caddy:2}
+    profiles: ["proxy"]
+    depends_on:
+      agent:
+        condition: service_healthy
+    networks:
+      - core
+      - egress                    # 申请 ACME 证书需要出网
+    ports:
+      - "${SCAGENT_PROXY_HTTP_PORT:-80}:80"
+      - "${SCAGENT_PROXY_HTTPS_PORT:-443}:443"
+    environment:
+      SCAGENT_DOMAIN: ${SCAGENT_DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
 networks:
   core:
     internal: true                # ★ 无外网路由：把"零下载"变成架构保证
   egress: {}
+
+volumes:
+  caddy_data:
+  caddy_config:
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  生产环境推荐：用 Docker secrets 传密钥，而不是环境变量
@@ -83,11 +121,12 @@ networks:
 #                 有 docker 权限的人都能读到
 #    · secrets  → 只在容器内以文件形式存在，不进环境、不进 inspect
 #
-#  用法：
-#    1) mkdir -p deploy/secrets && chmod 700 deploy/secrets
-#       printf '%s' 'sk-你的密钥'  > deploy/secrets/deepseek_api_key
-#       printf '%s' '你的访问令牌' > deploy/secrets/scagent_token
-#       chmod 600 deploy/secrets/*
+#  用法（密钥目录建议放在仓库之外，见 .env.sample 的 SCAGENT_SECRETS_DIR；
+#        下例以 Linux 的 /srv/scagent/secrets 为例）：
+#    1) mkdir -p /srv/scagent/secrets && chmod 700 /srv/scagent/secrets
+#       printf '%s' 'sk-你的密钥'  > /srv/scagent/secrets/deepseek_api_key
+#       printf '%s' '你的访问令牌' > /srv/scagent/secrets/scagent_token
+#       chmod 600 /srv/scagent/secrets/*
 #
 #    2) 取消下面的 secrets 段注释，
 #       并给 agent 服务补上：

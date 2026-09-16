@@ -12,7 +12,7 @@
 #    digest  固定摘要（arm64/amd64 各不同，构建机架构为准）
 #    target  私有 registry 中的目标名
 #
-#  ⚠️ digest 需要重新固定：当前为占位值。生成方式见 scripts/push_registry.sh 顶部说明。
+#  digest 已用真实值固定（生成方式： docker inspect --format='{{index .RepoDigests 0}}' <image>）。
 # ═══════════════════════════════════════════════════════════════════════════════
 
 version: "1.0.0"
@@ -20,38 +20,41 @@ version: "1.0.0"
 # ── 原封不动搬运的外部镜像（我们不重新打包，只改标签）────────────────────────
 vendor:
   - source: docker.io/rocker/tidyverse:4.5.2
-    digest: "sha256:PIN_ME"          # 见 push_registry.sh: docker inspect --format='{{index .RepoDigests 0}}'
-    target: "${SCAGENT_REGISTRY}/base/tidyverse:4.5.2"
+    digest: "sha256:4813816ad695004b738ccfff8513ce43f017e6fe78fb273aafd0bee4d4e1070a"
+    target: "${SCAGENT_IMAGE_PREFIX}/base/tidyverse:4.5.2"
     note: "R 4.5.2 + tidyverse，作为 scagent-runtime 的基座"
 
   - source: docker.io/library/python:3.11-slim-bookworm
-    digest: "sha256:PIN_ME"
-    target: "${SCAGENT_REGISTRY}/base/python:3.11-slim-bookworm"
+    digest: "sha256:528257d48c1da0dcecc2e725d1ae34498d60c965f1241e39cd6a85a8859bdf84"
+    target: "${SCAGENT_IMAGE_PREFIX}/base/python:3.11-slim-bookworm"
     note: "Agent 服务基座"
 
 # ── 我们自己构建并推送的镜像 ──────────────────────────────────────────────────
+#  命名与 deploy/docker-compose.yml、scripts/push_registry.sh **完全一致**：
+#      <SCAGENT_IMAGE_PREFIX>/scagent-<runtime|seurat|agent>:<SCAGENT_VERSION>
+#  （历史上曾用 <registry>/bio/... 命名，已统一去掉 /bio/ 段）
 built:
-  - name: "${SCAGENT_REGISTRY}/bio/scagent-runtime:1.0.0"
-    from: "${SCAGENT_REGISTRY}/base/tidyverse:4.5.2"
+  - name: "${SCAGENT_IMAGE_PREFIX}/scagent-runtime:${SCAGENT_VERSION}"
+    from: "${SCAGENT_IMAGE_PREFIX}/base/tidyverse:4.5.2"
     dockerfile: seurat_backend/Dockerfile.runtime
-    changes: rarely              # 108 个 R 包，半年重建一次（≈4 GB）
+    changes: rarely              # 上百个 R 包，半年重建一次（≈10 GB）
     note: "把 Seurat/SingleR R 运行时整体当作那个'搬运一次的微镜像'"
 
-  - name: "${SCAGENT_REGISTRY}/bio/scagent-seurat:1.0.0"
-    from: "${SCAGENT_REGISTRY}/bio/scagent-runtime:1.0.0"
+  - name: "${SCAGENT_IMAGE_PREFIX}/scagent-seurat:${SCAGENT_VERSION}"
+    from: "${SCAGENT_IMAGE_PREFIX}/scagent-runtime:${SCAGENT_VERSION}"
     dockerfile: seurat_backend/Dockerfile
     changes: often               # 只 COPY 代码，改一次重建一次（≈10 MB）
     note: "应用层；容器内不含任何 .rds（断言保证）"
 
-  - name: "${SCAGENT_REGISTRY}/bio/scagent-agent:1.0.0"
-    from: "${SCAGENT_REGISTRY}/base/python:3.11-slim-bookworm"
+  - name: "${SCAGENT_IMAGE_PREFIX}/scagent-agent:${SCAGENT_VERSION}"
+    from: "${SCAGENT_IMAGE_PREFIX}/base/python:3.11-slim-bookworm"
     dockerfile: agent_core/Dockerfile
     changes: often
-    note: "Agent 服务；依赖来自 vendor/wheels（离线安装）"
+    note: "Agent 服务；依赖来自 PyPI（若自建 vendor/wheels 则可离线安装）"
 
 # ── 明确不在清单内的东西（防止误用）─────────────────────────────────────────
 excluded:
-  - item: "基因参考数据（celldex 等 .rds）"
-    why: "属于「数据」而非「软件」，走对象存储 + download_data.sh，见 deploy/data.manifest"
+  - item: "参考数据集（celldex 的 .rds 等）"
+    why: "属于「数据」而非「软件」：体积大，由部署者准备（scripts/fetch_refdata.sh 一次性下载到宿主机目录，或自建对象存储），见 deploy/data.manifest"
   - item: "10X 原始数据"
     why: "客户自有数据，不进仓库也不进 registry"

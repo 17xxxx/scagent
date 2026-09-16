@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════════
-#  scripts/push_registry.sh —— 构建并推送私有 registry（唯一部署路径）
+#  scripts/push_registry.sh —— 构建并推送私有 registry（SCAGENT_IMAGE_SOURCE=private 形态）
 #
 #  本脚本**只在构建机上运行**。构建机需要外网（拉基础镜像 + 访问 PPM 装 R 包）；
 #  服务器不需要外网，只从私有 registry 拉取（见 deploy/up.sh）。
+#
+#  镜像命名（与 deploy/docker-compose.yml 完全一致，全仓只此一套规则）：
+#      <SCAGENT_IMAGE_PREFIX>/scagent-<runtime|seurat|agent>:<版本>
+#  推送后把以下两行写进服务器的 deploy/.env：
+#      SCAGENT_IMAGE_SOURCE=private
+#      SCAGENT_IMAGE_PREFIX=$REG
 #
 #  用法：
 #      ./scripts/push_registry.sh <version> <registry> [runtime-version]
@@ -112,33 +118,39 @@ docker push "$REG/base/python:3.11-slim-bookworm"
 ok "基础镜像已搬运"
 
 # ── 2. 构建 R 运行时（重型，很少变）──────────────────────────────────────────
-info "[2/5] 构建 R 运行时 $REG/bio/scagent-runtime:$RUNTIME_VER"
+info "[2/5] 构建 R 运行时 $REG/scagent-runtime:$RUNTIME_VER"
 info "     这一步会安装 108 个 R 包，首次约 30–90 分钟"
 BUILD_ARGS=()
-for v in PPM_CRAN CRAN_FALLBACK BIOC_ROOT R_BIOC_VERSION PIP_INDEX_URL PIP_OPTS; do
+for v in PPM_CRAN CRAN_FALLBACK BIOC_ROOT R_BIOC_VERSION PIP_INDEX_URL PIP_OPTS APT_MIRROR; do
   [ -n "${!v:-}" ] && BUILD_ARGS+=(--build-arg "$v=${!v}")
 done
 docker build "${BUILD_ARGS[@]}" \
   -f seurat_backend/Dockerfile.runtime \
-  -t "$REG/bio/scagent-runtime:$RUNTIME_VER" .
-docker push "$REG/bio/scagent-runtime:$RUNTIME_VER"
+  -t "$REG/scagent-runtime:$RUNTIME_VER" .
+docker push "$REG/scagent-runtime:$RUNTIME_VER"
 ok "runtime 已推送"
 
 # ── 3. 构建应用层（轻量，每次改代码）────────────────────────────────────────
 info "[3/5] 构建应用层（只 COPY 代码，约 10 MB 增量）"
 docker build \
-  --build-arg RUNTIME="$REG/bio/scagent-runtime:$RUNTIME_VER" \
+  --build-arg RUNTIME="$REG/scagent-runtime:$RUNTIME_VER" \
   -f seurat_backend/Dockerfile \
-  -t "$REG/bio/scagent-seurat:$VER" .
-docker build -f agent_core/Dockerfile -t "$REG/bio/scagent-agent:$VER" .
+  -t "$REG/scagent-seurat:$VER" .
+docker build -f agent_core/Dockerfile -t "$REG/scagent-agent:$VER" .
 ok "应用层构建完成"
 
 # ── 4. 保留上一版（供 deploy/rollback.sh 回滚）并推送 ────────────────────────
 info "[4/5] 保留上一版标签并推送"
 for svc in scagent-runtime scagent-seurat scagent-agent; do
-  cur="$REG/bio/${svc}:$([ "$svc" = runtime ] && echo "$RUNTIME_VER" || echo "$VER")"
-  if docker image inspect "$cur" >/dev/null 2>&1 && [ "$([ "$svc" = runtime ] && echo "$RUNTIME_VER" || echo "$VER")" != "prev" ]; then
-    docker tag "$cur" "$REG/bio/${svc}:prev" || true
+  case "$svc" in
+    scagent-runtime) tag="$RUNTIME_VER" ;;
+    *)               tag="$VER" ;;
+  esac
+  cur="$REG/${svc}:$tag"
+  if docker image inspect "$cur" >/dev/null 2>&1; then
+    docker tag "$cur" "$REG/${svc}:prev" || warn "打 :prev 标签失败：$cur"
+  else
+    warn "本地没有 $cur，跳过 :prev（回滚将不可用）"
   fi
   docker push "$cur"
   ok "已推送 $cur"
@@ -147,14 +159,15 @@ done
 # ── 5. 校验搬运清单 ──────────────────────────────────────────────────────────
 info "[5/5] 校验搬运清单"
 if [ -x scripts/verify_vendoring.sh ] || [ -f scripts/verify_vendoring.sh ]; then
-  SCAGENT_REGISTRY="$REG" SCAGENT_VERSION="$VER" \
-    RUNTIME_IMAGE="$REG/bio/scagent-runtime:$RUNTIME_VER" \
+  SCAGENT_IMAGE_PREFIX="$REG" SCAGENT_VERSION="$VER" \
+    RUNTIME_IMAGE="$REG/scagent-runtime:$RUNTIME_VER" \
     bash scripts/verify_vendoring.sh || warn "校验未全部通过，请检查上方输出"
 fi
 
 printf '\n%s\n' "────────────────────────────────────────────────────────────"
 ok "构建并推送完成"
 printf '    服务器侧部署：\n'
-printf '      echo "SCAGENT_REGISTRY=%s" >> deploy/.env\n' "$REG"
+printf '      echo "SCAGENT_IMAGE_SOURCE=private" >> deploy/.env\n'
+printf '      echo "SCAGENT_IMAGE_PREFIX=%s" >> deploy/.env\n' "$REG"
 printf '      echo "SCAGENT_VERSION=%s" >> deploy/.env\n' "$VER"
 printf '      ./deploy/up.sh\n'

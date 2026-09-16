@@ -7,18 +7,21 @@
 #    · 令牌走公网时必须 HTTPS
 #    · 需要放行较大的请求体（upload/长文本）
 #
-#  用法：
-#      docker run -d --name caddy --network host \
-#        -v $PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro \
-#        -v caddy_data:/data caddy:2
+#  用法（由 docker-compose.yml 的 `proxy` 服务加载，**不再用 --network host**）：
+#      # 在 deploy/.env 里设置 SCAGENT_DOMAIN=你的域名，然后：
+#      docker compose -f deploy/docker-compose.yml --profile proxy up -d
+#
+#  说明：容器内代理目标用 compose 服务名 `agent`（同一 core 网络），
+#        不再写 127.0.0.1 —— 后者在容器里指向 Caddy 自己，是 `--network host`
+#        时代的写法，Docker Desktop 上既不可用也不正确。
 #
 #  把 scagent.example.com 换成你的域名，并确保该域名已解析到本机公网 IP。
 # ═══════════════════════════════════════════════════════════════════════════════
 
-scagent.example.com {
+{$SCAGENT_DOMAIN} {
 	encode zstd gzip
 
-	reverse_proxy 127.0.0.1:8080 {
+	reverse_proxy agent:8080 {
 		# 单次分析可能跑几十分钟；SSE 心跳在服务端，这里只放开读超时
 		transport http {
 			read_timeout 1h

@@ -2,26 +2,24 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 #  scripts/setup_secrets.sh —— 把密钥从 .env 迁移到 Docker secrets 文件
 #
-#  为什么要把密钥放到【项目目录之外】：
-#    开发编排挂载的是 `..:/workspace`（整个仓库）。任何放在项目内的密钥文件
-#    都会随这个挂载进入容器，secrets 就失去了意义。
-#    参见 docs 中关于挂载范围的说明。
+#  为什么默认放到【项目目录之外】：
+#    1) 任何放在项目内的密钥文件都可能被误打包/误提交（见 docs 的 G 类）；
+#    2) 开发编排挂载的是 `..:/workspace`（整个仓库），项目内密钥会随挂载进容器。
+#    要放回项目内需显式指定：--target deploy/secrets
 #
-#  产出（默认）：
-#    ~/.config/scagent/deepseek_api_key   权限 600
-#    ~/.config/scagent/scagent_token      权限 600
-#    目录本身权限 700
+#  产出（默认落点，按此顺序解析）：
+#    1) deploy/.env 中的 SCAGENT_SECRETS_DIR
+#    2) <仓库>/../scagent-secrets
+#    文件名 deepseek_api_key / scagent_token，权限 600；目录权限 700
 #
 #  用法：
 #      ./scripts/setup_secrets.sh                    # 从项目根 .env 迁移
 #      ./scripts/setup_secrets.sh --target DIR       # 指定目录
 #      ./scripts/setup_secrets.sh --from FILE        # 从别的 env 文件读取
-#                                                    # （无 .env 时会自动继承 ~/.config/scagent）
 #      ./scripts/setup_secrets.sh --force            # 覆盖已存在的密钥
 #      ./scripts/setup_secrets.sh --check            # 只检查现状，不写文件
 #      ./scripts/setup_secrets.sh --sanitize         # 清理项目内 .env 里的活密钥
-#      ./scripts/setup_secrets.sh --target deploy/secrets --profile prod
-#                                                    # 生产密钥（允许放在项目内）
+#      ./scripts/setup_secrets.sh --profile dev      # 仅开发者：额外校验密钥不会进开发容器
 # ═══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -34,12 +32,30 @@ ok()   { printf '  %s\n' "${C_G}✅${C_0} $*"; }
 warn() { printf '  %s\n' "${C_Y}⚠️ ${C_0} $*"; }
 die()  { printf '  %s\n' "${C_R}❌${C_0} $*" >&2; exit 1; }
 
-TARGET="${HOME}/.config/scagent"
+# 默认落点：优先用 deploy/.env 里的 SCAGENT_SECRETS_DIR；否则放在**仓库之外**的兄弟目录。
+# （$HOME/.config/scagent 是旧默认值 —— 在 WSL 里它落在发行版文件系统内，Windows 侧看不到、
+#   备份不到，违反「安装位置必须在宿主机磁盘」的约束，见 docs/ISSUES_AND_PLAN.md C1 / G4）
+_default_target() {
+  if [ -f "$ROOT/deploy/.env" ]; then
+    local d
+    d="$(sed -n 's/^[[:space:]]*SCAGENT_SECRETS_DIR[[:space:]]*=[[:space:]]*//p' "$ROOT/deploy/.env" | tr -d '\r' | head -1)"
+    if [ -n "$d" ]; then
+      case "$d" in
+        /*) printf '%s' "$d" ;;
+        *)  printf '%s/deploy/%s' "$ROOT" "${d#./}" ;;
+      esac
+      return
+    fi
+  fi
+  printf '%s/../secrets' "$ROOT"
+}
+
+TARGET="$(_default_target)"
 FROM_FILE="$ROOT/.env"
 FORCE=0
 CHECK_ONLY=0
 SANITIZE=0
-PROFILE="auto"
+PROFILE="prod"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -87,6 +103,7 @@ case "$TARGET" in
 esac
 
 if [ "$PROFILE" = "auto" ]; then
+  # 仅当显式传 --profile auto 时才走老逻辑（auto 不再是默认值）
   if [ "$IN_REPO" -eq 1 ]; then PROFILE="prod"; else PROFILE="dev"; fi
 fi
 case "$PROFILE" in dev|prod) ;; *) die "--profile 只能是 dev 或 prod（当前: $PROFILE）" ;; esac
@@ -400,11 +417,12 @@ printf '  查看它：\n'
 printf '      cat %s\n\n' "$TOKEN_FILE"
 printf '  （故意不回显到终端，避免令牌进入 shell 记录或日志）\n\n' 
 
-printf '  启动开发环境：\n'
-printf '      docker compose -f .devcontainer/docker-compose.yml up -d\n\n'
 printf '  说明：\n'
 printf '    · 密钥文件通过 Docker secrets 挂到容器内的 /run/secrets/，\n'
 printf '      不会出现在 docker inspect 的 Config.Env 里\n'
 printf '    · 项目内的 .env 现在可以删掉了（或留作模板，但不要再放真密钥）\n'
-printf '    · 生产环境用同一套机制，只是路径不同（deploy/secrets/）\n'
+printf '    · 启动服务： ./deploy/up.sh      （Windows： deploy\\scagent.ps1 up）\n'
+printf '    · 请确认 deploy/.env 里的 SCAGENT_SECRETS_DIR 指向本目录：\n'
+printf '          SCAGENT_SECRETS_DIR=%s\n' "$TARGET"
+printf '      up.sh 会在该目录下找到这两个文件时自动叠加 docker-compose.secrets.yml\n'
 printf '    · 复查现状： ./scripts/setup_secrets.sh --check\n'
