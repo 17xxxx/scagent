@@ -64,12 +64,19 @@ scagent/
 │   ├── 07_cell_ratio.R          # 细胞比例堆叠柱状图
 │   ├── 08_heatmap.R             # 标记基因热图
 │   └── 09_enrichment.R          # GO 功能富集分析
-├── shared_data/                 # R 包离线安装包（22个）
+├── shared_data/                 # 构建期源码包：presto-master.zip（必需）；其余 *.tar.gz 为本地可选、不入库
 ├── .devcontainer/               # VS Code DevContainer 配置
 │   ├── devcontainer.json
 │   └── docker-compose.yml       # agent + seurat 双服务编排
 └── TOOLS_HELP.txt               # 工具参数参考文档
 ```
+
+## 生产部署
+
+面向部署者的完整说明见 **[DEPLOY.md](DEPLOY.md)**（Linux 与 Windows/Docker Desktop 两种单机部署、数据与参考数据集放置、日常运维），
+常见问题见 **[FAQ.md](FAQ.md)**。
+
+> 下面这一节是**开发环境**（VS Code Dev Container）的快速开始。
 
 ## 快速开始
 
