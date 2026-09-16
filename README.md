@@ -250,12 +250,22 @@ data/
 
 ## Third-party licenses
 
-The **core bioinformatics dependencies include GPL-3.0 components** (Seurat, SingleR, celldex, …),
-so this project is licensed under **GPL-3.0** for consistency.
+The **core bioinformatics dependencies include GPL-3.0 components**
+(SingleR, celldex, harmony, presto, GLPK, …), so this project is licensed under **GPL-3.0**
+for consistency. (Seurat itself is MIT; the licence inventory lists every component.)
 
-The full dependency licence inventory (including copyleft components such as GPL/LGPL) is in
+The full dependency licence inventory — base images, system libraries, 355 R packages and
+59 Python distributions, with the copyleft ones called out — is in
 [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).
 **If you redistribute the Docker images, comply with the third-party licences listed there.**
+
+**What redistribution actually requires** (citation is a separate matter — see below):
+
+- GPL-3.0 / AGPL-3.0 components (`SingleR`, `celldex`, `harmony`, `presto`, GLPK, `fst`,
+  `RhpcBLASctl`) — ship their corresponding source and licence texts; the inventory lists where
+  to obtain each one, and `presto`'s source already ships in this repository;
+- permissive components (MIT / BSD / Apache / Artistic) — keep their copyright notices;
+- running the software yourself, without redistributing it, triggers **none** of these.
 
 ## License
 
@@ -266,3 +276,20 @@ The full dependency licence inventory (including copyleft components such as GPL
 If this project helps your research, please cite it. Machine-readable citation metadata is in
 [`CITATION.cff`](CITATION.cff) (GitHub shows a "Cite this repository" button), and author /
  copyright information is in [`AUTHORS`](AUTHORS).
+
+**Please also cite the upstream tools you actually used** — for a paper based on this pipeline
+that typically means the methodology behind the steps you ran. The `references:` list in
+`CITATION.cff` contains ready-to-use entries for:
+
+| Tool | Used for | Reference |
+|---|---|---|
+| **Seurat v5** | core single-cell analysis (tools 1–4) | Hao et al., *Nature Biotechnology* 2024 |
+| **SingleR** | cell type annotation (tool 4) | Aran et al., *Nature Immunology* 2019 |
+| **celldex** | reference datasets for SingleR | Bioconductor package |
+| **clusterProfiler** | GO enrichment (tool 9) | Wu et al., *The Innovation* 2021 |
+| **harmony** | batch correction (tool 1, step 8) | Korsunsky et al., *Nature Methods* 2019 |
+| **presto** | fast Wilcoxon/AUC marker tests | Korsunsky et al., *bioRxiv* 2019 |
+| **LangChain** / **LangGraph** | agent framework and HITL state machine | project repositories |
+
+Depending on the steps you run, you may also want to cite the tools those depend on
+(e.g. sctransform, UMAP/uwot, Leiden).

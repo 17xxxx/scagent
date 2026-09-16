@@ -247,12 +247,21 @@ data/
 
 ## 依赖许可证
 
-本项目的**核心生信依赖包含 GPL-3.0 组件**（Seurat、SingleR、celldex 等），
-因此本项目采用 **GPL-3.0** 授权以保持一致。
+本项目的**核心生信依赖包含 GPL-3.0 组件**（SingleR、celldex、harmony、presto、GLPK 等），
+因此本项目采用 **GPL-3.0** 授权以保持一致。（`Seurat` 本身是 MIT；完整清单逐项列出。）
 
-完整的依赖许可证清单（含 GPL/LGPL 传染性组件的标注）见
+完整的依赖许可证清单 —— 基础镜像、系统库、355 个 R 包与 59 个 Python 包，
+并单独标注传染性组件 —— 见
 [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md)。
 **分发本项目的 Docker 镜像时，请一并遵守其中列出的第三方许可证条款。**
+
+**再分发具体要做什么**（"引用"是另一回事，见下文）：
+
+- GPL-3.0 / AGPL-3.0 组件（`SingleR`、`celldex`、`harmony`、`presto`、GLPK、`fst`、
+  `RhpcBLASctl`）—— 随附对应源码与许可证文本；清单里写了各组件源码的获取位置，
+  其中 `presto` 的源码已随本仓库分发；
+- 宽松许可证组件（MIT / BSD / Apache / Artistic）—— 保留其版权声明；
+- 自己使用、不对外分发 —— 以上义务**一条都不触发**。
 
 ## 许可证
 
@@ -263,3 +272,18 @@ data/
 若本项目对你的研究有帮助，欢迎引用。机器可读的引用信息见
 [`CITATION.cff`](CITATION.cff)（GitHub 侧栏会显示 "Cite this repository"），
 作者与版权信息见 [`AUTHORS`](AUTHORS)。
+
+**请一并引用你实际用到的上游工具**——用本流水线做分析、尤其是发表论文时，通常需要引用
+所运行步骤背后的方法学工作。`CITATION.cff` 的 `references:` 字段里已备好可直接使用的条目：
+
+| 工具 | 用在哪 | 参考 |
+|---|---|---|
+| **Seurat v5** | 核心单细胞分析（工具 1–4） | Hao et al., *Nature Biotechnology* 2024 |
+| **SingleR** | 细胞类型注释（工具 4） | Aran et al., *Nature Immunology* 2019 |
+| **celldex** | SingleR 的参考数据集 | Bioconductor 包 |
+| **clusterProfiler** | GO 富集（工具 9） | Wu et al., *The Innovation* 2021 |
+| **harmony** | 批次校正（工具 1 第 8 步） | Korsunsky et al., *Nature Methods* 2019 |
+| **presto** | Wilcoxon/AUC 加速的标记基因检验 | Korsunsky et al., *bioRxiv* 2019 |
+| **LangChain** / **LangGraph** | Agent 框架与 HITL 状态机 | 项目仓库 |
+
+视你跑过的步骤，可能还需要引用它们依赖的方法（如 sctransform、UMAP/uwot、Leiden）。

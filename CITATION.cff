@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "如果本项目对您的研究有帮助，请按以下格式引用。"
+message: "如果本项目对您的研究有帮助，请按以下格式引用。If you use this software in your research, please cite it as below."
 title: "scAgent: AI 驱动的单细胞 RNA 测序分析 Agent"
 abstract: >-
   scAgent 是一个双层架构的 AI 驱动单细胞 RNA 测序（scRNA-seq）分析流水线。
@@ -13,7 +13,8 @@ authors:
   - name: "sqx"
     email: "sqx17x@gmail.com"
 license: GPL-3.0-only
-version: "0.1.0"
+version: "1.0.0"
+date-released: "2026-09-17"
 keywords:
   - single-cell
   - scRNA-seq
@@ -23,4 +24,98 @@ keywords:
   - large language model
   - agent
   - reproducible research
-repository-code: "https://github.com/<用户名>/scagent"
+repository-code: "https://github.com/17xxxx/scagent"
+references:
+  # 上游方法学组件：使用本软件做分析、尤其是发表论文时，请一并引用下列工作。
+  - type: article
+    title: "Dictionary learning for integrative, multimodal and scalable single-cell analysis"
+    authors:
+      - family-names: Hao
+        given-names: Yuhan
+      - family-names: Stuart
+        given-names: Tim
+      - family-names: Kowalski
+        given-names: Madeline H.
+      - family-names: Satija
+        given-names: Rahul
+    year: 2024
+    journal: "Nature Biotechnology"
+    doi: "10.1038/s41587-023-01767-y"
+    notes: "Seurat v5 —— 底层单细胞分析框架（工具 1–4）"
+
+  - type: article
+    title: "Reference-based analysis of lung single-cell sequencing reveals a transitional profibrotic macrophage"
+    authors:
+      - family-names: Aran
+        given-names: Dvir
+      - family-names: Looney
+        given-names: Agnieszka P.
+      - family-names: Bhattacharya
+        given-names: Mallar
+    year: 2019
+    journal: "Nature Immunology"
+    doi: "10.1038/s41590-018-0276-y"
+    notes: "SingleR —— 细胞类型自动注释（工具 4）"
+
+  - type: software
+    title: "celldex: Reference Index for Cell Types"
+    authors:
+      - family-names: Lun
+        given-names: Aaron
+    year: 2024
+    url: "https://bioconductor.org/packages/celldex/"
+    notes: "SingleR 使用的参考数据集（工具 4）"
+
+  - type: article
+    title: "clusterProfiler 4.0: A universal enrichment tool for interpreting omics data"
+    authors:
+      - family-names: Wu
+        given-names: Tianzhi
+      - family-names: Yu
+        given-names: Guangchuang
+    year: 2021
+    journal: "The Innovation"
+    doi: "10.1016/j.xinn.2021.100141"
+    notes: "GO 功能富集分析（工具 9）"
+
+  - type: article
+    title: "Fast, sensitive and accurate integration of single-cell data with Harmony"
+    authors:
+      - family-names: Korsunsky
+        given-names: Ilya
+      - family-names: Raychaudhuri
+        given-names: Soumya
+    year: 2019
+    journal: "Nature Methods"
+    doi: "10.1038/s41592-019-0619-0"
+    notes: "批次校正（工具 1 的 Step 8）"
+
+  - type: article
+    title: "Presto scales Wilcoxon and auROC analyses to millions of observations"
+    authors:
+      - family-names: Korsunsky
+        given-names: Ilya
+      - family-names: Nathan
+        given-names: Aparna
+      - family-names: Slowikowski
+        given-names: Kamil
+    year: 2019
+    journal: "bioRxiv"
+    doi: "10.1101/653253"
+    notes: "差异表达 Wilcoxon/AUC 加速（工具 4）"
+
+  - type: software
+    title: "LangChain"
+    authors:
+      - name: "LangChain contributors"
+    year: 2026
+    url: "https://github.com/langchain-ai/langchain"
+    notes: "Agent 与工具调用框架"
+
+  - type: software
+    title: "LangGraph"
+    authors:
+      - name: "LangGraph contributors"
+    year: 2026
+    url: "https://github.com/langchain-ai/langgraph"
+    notes: "Agent 状态机与检查点（Human-in-the-Loop 审批）"
