@@ -32,7 +32,6 @@ vendor:
 # ── 我们自己构建并推送的镜像 ──────────────────────────────────────────────────
 #  命名与 deploy/docker-compose.yml、scripts/push_registry.sh **完全一致**：
 #      <SCAGENT_IMAGE_PREFIX>/scagent-<runtime|seurat|agent>:<SCAGENT_VERSION>
-#  （历史上曾用 <registry>/bio/... 命名，已统一去掉 /bio/ 段）
 built:
   - name: "${SCAGENT_IMAGE_PREFIX}/scagent-runtime:${SCAGENT_VERSION}"
     from: "${SCAGENT_IMAGE_PREFIX}/base/tidyverse:4.5.2"

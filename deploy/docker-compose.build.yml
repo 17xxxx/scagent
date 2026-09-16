@@ -15,7 +15,7 @@
 #  用法：
 #    ⚠️ **必须分两步**：compose 会并行构建，而 seurat 层的 `FROM ${RUNTIME}` 在
 #       runtime 镜像尚不存在时，会按非限定名去 Docker Hub 找
-#       docker.io/<prefix>/scagent-runtime:<ver> → 必然失败（实测被镜像源 403）。
+#       docker.io/<prefix>/scagent-runtime:<ver> → 必然失败（镜像源会返回 403）。
 #       depends_on 只约束 up 的顺序，不约束并行 build。
 #        1) docker compose -f deploy/docker-compose.build.yml build runtime
 #        2) docker compose -f deploy/docker-compose.build.yml build seurat agent

@@ -43,7 +43,7 @@ param(
 
 # 注意：**不能**用 'Stop' —— PS 5.1 会把原生命令（docker）写 stderr 当成终止性错误抛出，
 # 而"预期内的失败"（探测镜像不存在、V2 守卫故意让 compose 报错）本来就会写 stderr。
-# 统一用 Continue，靠 $LASTEXITCODE / try-catch 显式判断（P2.1 修正）。
+# 统一用 Continue，靠 $LASTEXITCODE / try-catch 显式判断。
 $ErrorActionPreference = 'Continue'
 try {
     [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
@@ -54,13 +54,14 @@ try {
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 if (-not $RepoRoot) { $RepoRoot = (Get-Location).Path }
 
-$ScagentBuild = 'P2.8'
+# 部署脚本版本（随发布 tag 更新）
+$ScagentBuild = '1.0.0'
 $libPath = Join-Path $PSScriptRoot 'lib\Scagent.Common.ps1'
 
 # ── 预检：先解析两个脚本 ──────────────────────────────────────────────────────
 #  为什么要有这一步：如果 lib 里有一个解析错误，dot-source 只报一行，
 #  但**里面所有函数都没被定义**，于是后续每一行调用都刷出 CommandNotFound ——
-#  几十行报错掩盖了真正的原因（实测踩过：字符串里的 "$me:" 被当成盘符变量）。
+#  几十行报错会掩盖真正的原因（例如字符串里的 "$me:" 被当成盘符变量）。
 $parseErrors = New-Object System.Collections.ArrayList
 foreach ($p in @($libPath, $PSCommandPath)) {
     if (-not $p) { continue }
@@ -210,7 +211,7 @@ function Assert-ScConfigured {
         Exit-Sc "缺少 deploy\.env。请先运行： deploy\install.cmd" 2
     }
     if ($Ctx.ImageError) {
-        Exit-Sc "部署配置无效：$($Ctx.ImageError)`n    详见 deploy\.env.sample 与 docs\ISSUES_AND_PLAN.md §7.3" 2
+        Exit-Sc "部署配置无效：$($Ctx.ImageError)`n    详见 deploy\.env.sample" 2
     }
     foreach ($k in @('SCAGENT_WORKSPACE', 'SCAGENT_BIODATA')) {
         if (-not (Get-ScEnvValue -Env $Ctx.Env -Key $k)) {
@@ -283,7 +284,7 @@ function Invoke-ScSecretsVerb {
         }
     }
 
-    # ── 密钥可读性预检（P2.3）────────────────────────────────────────────────
+    # ── 密钥可读性预检 ────────────────────────────────────────────────
     #   容器会以 uid 1000 去读这两个文件；这里先确认**当前用户**读得到。
     #   读不到时容器启动必然失败，且报错很难懂，所以在启动前就点明并给出修复命令。
     $unreadable = @()
@@ -300,7 +301,7 @@ function Invoke-ScSecretsVerb {
     }
 
     if ($HardenAcl) {
-        # 显式要求收紧时才做（默认不做，见 Set-ScAcl 的三条经验）
+        # 仅在显式要求收紧时执行（默认不改动 ACL）
         Set-ScAcl -Path $dir -WhatIfOnly:$DryRun
         if (Test-Path -LiteralPath $keyFile) { Set-ScAcl -Path $keyFile -WhatIfOnly:$DryRun }
         if (Test-Path -LiteralPath $tokFile) { Set-ScAcl -Path $tokFile -WhatIfOnly:$DryRun }
@@ -351,10 +352,10 @@ function New-ScEnvFromTemplate {
 # ── 动词：build（镜像分层构建）────────────────────────────────────────────────
 function Invoke-ScBuild {
     <#
-      必须**分两步串行**构建（P2.5）：
+      必须**分两步串行**构建：
         docker compose build 会并行构建各服务，而 seurat 层的 `FROM ${RUNTIME}`
         在 runtime 镜像还不存在时，会按非限定名去 Docker Hub 找
-        docker.io/<prefix>/scagent-runtime:<ver> → 必然失败（实测被镜像源 403 拒）。
+        docker.io/<prefix>/scagent-runtime:<ver> → 必然失败（镜像源会返回 403）。
       depends_on 只约束 up 的顺序，不约束并行 build。
     #>
     param([switch]$Force, [switch]$NoCache)
@@ -486,7 +487,7 @@ function Invoke-ScInstall {
     Write-ScOk "工作目录：$ws"
     $wsWin = ($ws -replace '/', '\')
     Write-ScStep "把 10X 数据放到： $wsWin\data\rawdata\<样本名>\（barcodes / features / matrix 三个文件）"
-    Write-ScStep '⚠️ 注意：是上面这个**工作目录**，不是仓库目录里的 data\ —— 两者是不同目录（实测最常见的放错位置）'
+    Write-ScStep '⚠️ 注意：是上面这个**工作目录**，不是仓库目录里的 data\ —— 两者是不同目录（最常见的放错位置）'
     $bioRaw = Get-ScEnvValue -Env $ctx.Env -Key 'SCAGENT_BIODATA'
     if ($bioRaw) {
         $bio = Resolve-ScPath -Path $bioRaw -RepoRoot $RepoRoot
@@ -660,7 +661,7 @@ function Invoke-ScVerify {
     Write-ScBanner 'scAgent 部署自检（Windows）'
 
     # 先判断"是否部署过"：有容器，或镜像已构建/已拉取。
-    # 没部署过就不该把"容器 0 个 / 健康无响应"报成阻塞 —— 那是还没装，不是坏了（P2.4）
+    # 未部署时不应把"容器 0 个 / 健康无响应"报成阻塞 —— 那是还没装，不是故障
     $deployed = $false
     $sf = $null
     $vSeurat = ''; $vAgent = ''
@@ -688,7 +689,7 @@ function Invoke-ScVerify {
         elseif (-not (Test-ScSecretReadable -Path $f)) { $unreadable += (Split-Path -Leaf $f) }
     }
     if ($unreadable.Count -gt 0) {
-        Item '密钥文件可读性' 'fail' "读不到：$($unreadable -join ', ')（ACL 被锁，见 §9.3 W-4）"
+        Item '密钥文件可读性' 'fail' "读不到：$($unreadable -join ', ')（ACL 被锁）"
         Write-ScAclRepairHint -Dir $ctx.SecretsDir
     } elseif ($missing.Count -gt 0) {
         Item '密钥文件可读性' 'warn' "缺少：$($missing -join ', ')（运行 install 会自动生成）"
@@ -957,7 +958,7 @@ function Invoke-ScDoctor {
         else {
             DItem '10X 原始数据' 'warn' '没有样本 —— 质控及后续步骤都无法执行'
             DHint "把样本放到 $rawDir\<样本名>\（含 barcodes/features/matrix）"
-            DHint '⚠️ 是工作目录，不是仓库目录里的 data\ —— 实测最常见的放错位置'
+            DHint '⚠️ 是工作目录，不是仓库目录里的 data\ —— 最常见的放错位置'
         }
         $bioRaw = Get-ScEnvValue -Env $ctx.Env -Key 'SCAGENT_BIODATA'
         if ($bioRaw) {

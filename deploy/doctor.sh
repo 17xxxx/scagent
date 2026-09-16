@@ -206,7 +206,7 @@ else
   else
     warn "没有样本 —— 质控及后续步骤都无法执行"
     hint "把每个样本放到 $WS/data/rawdata/<样本名>/（含 barcodes/features/matrix 三个文件）"
-    hint "⚠️ 是工作目录，不是仓库目录里的 data/ —— 实测最常见的放错位置"
+    hint "⚠️ 是工作目录，不是仓库目录里的 data/ —— 最常见的放错位置"
   fi
 
   BIO="$(scagent_resolve_path "${SCAGENT_BIODATA:-}" 2>/dev/null || true)"
@@ -229,7 +229,7 @@ else
         me="$(id -u)"
         foreign=$(find "$WS" -maxdepth 3 \! -uid "$me" 2>/dev/null | head -1 | wc -l)
         if [ "${foreign:-0}" -eq 0 ]; then pass "全部属于 uid $me"
-        else warn "有非 uid $me 的条目（历史遗留），容器可能写不进去"
+        else warn "有非 uid $me 的条目（多为以 root 创建的旧文件），容器可能写不进去"
              hint "修复： sudo chown -R $me:$(id -g) $WS"; fi
       fi
       ;;

@@ -2,12 +2,11 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 #  scripts/check_secrets.sh —— 密钥可读性预检（宿主机侧）
 #
-#  为什么需要它：
-#    Docker Compose 的 file 型 secret 底层就是 bind mount，容器能不能读
-#    完全由【宿主机文件的属主 + 权限位 + 强制访问控制】三者共同决定。
-#    而 services.secrets 的 uid/gid/mode 属性在该实现下【不被支持】，
-#    所以只能从宿主机侧对齐。任一不匹配都会让 agent 启动即失败，
-#    且报错往往只有一句 Permission denied。
+#  检查内容：
+#    Docker Compose 的 file 型 secret 底层是 bind mount，容器能否读取由
+#    【宿主机文件的属主 + 权限位 + 强制访问控制】三者共同决定；
+#    services.secrets 的 uid/gid/mode 属性在该实现下不被支持，只能从宿主机侧对齐。
+#    任一不匹配都会让 agent 启动失败，且报错往往只有一句 Permission denied。
 #
 #  本脚本检查：
 #    1. 容器有效 UID —— 用 `docker run --rm --entrypoint id <image> -u` 运行时探测

@@ -3,10 +3,10 @@
 #  deploy/verify.sh —— 部署自检
 #
 #  逐项检查部署是否可用，并对失败项给出中文处置建议。
-#  同时覆盖方案中的 Vendoring 专项验收项：
-#    V2  默认值不回落到公网（compose 变量必填）
-#    V3  镜像中不含参考数据（.rds）
-#    V7  参考集缺失时快速失败
+#  其中包含三项分发相关的检查：
+#    · 默认值不回落到公网（compose 变量必填）
+#    · 镜像中不含参考数据（.rds）
+#    · 参考集缺失时快速失败
 # ═══════════════════════════════════════════════════════════════════════════════
 set -uo pipefail
 
@@ -196,9 +196,9 @@ else
   [ "$n" -gt 0 ] && pass "$n 个样本目录" || warn "暂无样本（放入 $WORKSPACE/data/rawdata/<样本名>/）"
 fi
 
-# ── 数据目录属主（升级遗留，C9 / 决-13）───────────────────────────────────────
-#   旧版本的 seurat 以 root 运行，会把 root 所有的文件写进宿主机数据目录；
-#   切到非 root（uid 1000）后这些文件仍会挡住写入。Git Bash/Windows 下无此语义，跳过。
+# ── 数据目录属主 ──────────────────────────────────────────────────────────────
+#   seurat 容器以 uid 1000 运行；数据目录里若有 root 所有的文件，容器会写不进去。
+#   Git Bash / Windows 下无 POSIX 属主语义，跳过。
 case "$(uname -s 2>/dev/null || echo unknown)" in
   MINGW*|MSYS*|CYGWIN*) : ;;
   *)
@@ -209,7 +209,7 @@ case "$(uname -s 2>/dev/null || echo unknown)" in
       if [ "${foreign:-0}" -eq 0 ]; then
         pass "全部属于当前用户（uid $me）"
       else
-        warn "有 $(find "$WORKSPACE" -maxdepth 3 \! -uid "$me" 2>/dev/null | wc -l) 个条目不属于 uid $me（历史版本遗留）"
+        warn "有 $(find "$WORKSPACE" -maxdepth 3 \! -uid "$me" 2>/dev/null | wc -l) 个条目不属于 uid $me"
         printf '      容器以 uid %s 运行时可能写不进去；修复： sudo chown -R %s:%s %s\n' \
                "$me" "$me" "$(id -g)" "$WORKSPACE"
       fi

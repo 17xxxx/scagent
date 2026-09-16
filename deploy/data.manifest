@@ -20,7 +20,7 @@
 #  格式（空白分隔，支持 # 注释行）：
 #      <name>  <version>  <sha256>
 #  说明：<name> 需与 scripts/download_data.sh 拼出的归档名一致
-#        （<name>-<version>.tar.gz）；<sha256> 请用 sha256sum 实测值替换。
+#        （<name>-<version>.tar.gz）；<sha256> 填 sha256sum 计算出的实际值。
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # name                        version   sha256

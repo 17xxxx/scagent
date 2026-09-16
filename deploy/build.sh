@@ -2,9 +2,9 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 #  deploy/build.sh —— 本机构建镜像（Linux / WSL；Windows 用 deploy\scagent.cmd build）
 #
-#  为什么需要它：构建必须**分两步串行** —— compose 会并行构建各服务，而
-#  seurat 层的 `FROM ${RUNTIME}` 在 runtime 镜像尚不存在时会去 Docker Hub 解析
-#  （必然失败）。depends_on 只约束 up 的顺序，不约束并行 build。
+#  构建必须**分两步串行**：compose 会并行构建各服务，而 seurat 层的
+#  `FROM ${RUNTIME}` 在 runtime 镜像尚不存在时会去 Docker Hub 解析（必然失败）。
+#  depends_on 只约束 up 的顺序，不约束并行 build。
 #
 #  用法：
 #      ./deploy/build.sh              # runtime 已存在则跳过，只重建应用层

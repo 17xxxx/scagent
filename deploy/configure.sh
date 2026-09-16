@@ -3,7 +3,6 @@
 #  deploy/configure.sh —— 交互式生成配置（Linux / WSL 侧；Windows 用 install.cmd）
 #
 #  只问 3 件事，其余自动推导：**数据根目录 → workspace/biodata/secrets 三个路径**。
-#  目标是把"填配置"从 ★★★ 降到 ★（见 docs/ISSUES_AND_PLAN.md §7.6 / 决-21）。
 #
 #  用法：
 #      ./deploy/configure.sh              # 交互（推荐）
@@ -125,7 +124,7 @@ case "$INSTALL_ROOT" in
 esac
 if [ "$IN_REPO" -eq 1 ]; then
   warn "数据根目录在仓库内部（$INSTALL_ROOT）"
-  step "建议放到仓库之外，例如 /srv/scagent —— 避免误打包/误删/误提交（G4）"
+  step "建议放到仓库之外，例如 /srv/scagent —— 避免误打包 / 误删 / 误提交"
   if [ "$YES" -eq 0 ] && [ "$PRINT_ONLY" -eq 0 ]; then
     ans="$(ask '仍要使用它吗？(y/N)' 'N')"
     case "$ans" in y|Y|yes) : ;; *) die "已取消：请换一个仓库之外的目录" ;; esac
@@ -163,8 +162,8 @@ if [ -n "$PREFIX" ] && [ -n "$OLD_SOURCE" ] && [ "$OLD_SOURCE" != "$IMAGE_SOURCE
   PREFIX=""
 fi
 
-# 命令行显式给的前缀优先级最高 —— 用于指向"已发布镜像"（如国内加速源或自有 registry）。
-# 这是把"手改 deploy/.env 两行"升级成一条命令的关键（此前 public 只能拿到内置默认前缀）。
+# 命令行显式给的前缀优先级最高 —— 用于指向"已发布镜像"（如国内加速源或自有 registry）；
+# 不指定时按来源推导默认前缀。
 if [ -n "$IMAGE_PREFIX" ]; then
   [ -n "$PREFIX" ] && [ "$PREFIX" != "$IMAGE_PREFIX" ] && \
     step "命令行指定前缀 $IMAGE_PREFIX（覆盖原值 $PREFIX）"

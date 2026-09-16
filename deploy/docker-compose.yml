@@ -1,7 +1,7 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 #  deploy/docker-compose.yml —— 生产运行编排（单机 / 服务器通用）
 #
-#  镜像来源三选一（见 deploy/.env.sample、docs/ISSUES_AND_PLAN.md §7.3）：
+#  镜像来源三选一（详见 deploy/.env.sample）：
 #    · local    本机 build 产物（前缀默认 scagent）
 #    · public   公开发布的镜像（前缀默认 ghcr.io/17xxxx/scagent）
 #    · private  自有 registry（如 harbor.corp.local/scagent）

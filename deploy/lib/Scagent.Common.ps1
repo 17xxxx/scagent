@@ -48,7 +48,7 @@ function Write-ScStep {
     Write-Host "      $Text" -ForegroundColor DarkGray
 }
 
-# 退出码约定（与 §7.6 动词契约一致）
+# 退出码约定：0 成功；1 一般失败（环境不满足等）；2 配置 / 参数错误；3 服务或运行期问题、缺少前置条件、用户中止
 function Exit-Sc {
     param(
         [string]$Message = '',
@@ -327,7 +327,7 @@ function Test-ScPortInUse {
 
 function Set-ScAcl {
     <#
-      Windows 上没有 chmod 600，只能用 icacls 收紧（C3）。三条经验（P2.1）：
+      Windows 上没有 chmod 600，只能用 icacls 收紧。三条注意事项：
         1. 主体必须用**完整身份**（DOMAIN\user），只写用户名可能落到不可解析的 SID，
            结果是自己也访问不了；
         2. **必须保留 SYSTEM 与 Administrators**，否则文件会变成谁也改不了、删不掉的"死锁"；
@@ -474,9 +474,9 @@ function Test-ScSecretReadable {
 }
 
 function Write-ScAclRepairHint {
-    <# 密钥文件被 ACL 锁住时给出的修复指引（见 docs §9.3 W-4/W-6） #>
+    <# 密钥文件被 ACL 锁住时给出的修复指引 #>
     param([Parameter(Mandatory)][string]$Dir)
-    Write-ScStep '该目录的 ACL 可能被收紧到了别的账户（旧的 icacls /inheritance:r 遗留）。修复（管理员 PowerShell）：'
+    Write-ScStep '该目录的 ACL 可能被收紧到了别的账户（例如执行过 icacls /inheritance:r）。修复（管理员 PowerShell）：'
     Write-ScStep "  takeown /F `"$Dir`" /R /D Y"
     Write-ScStep "  icacls `"$Dir`" /reset /T /C"
     Write-ScStep "  icacls `"$Dir`"        # 确认已恢复继承来的 Users/Administrators"
