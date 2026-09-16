@@ -165,7 +165,8 @@ class Settings:
     checkpoint_db: str
 
     # ── 密钥配置错误（若非空，服务应拒绝启动并原样打印）────────────────────
-    config_error: Optional[str]
+    config_error: Optional[str]     # LLM 密钥（DEEPSEEK_API_KEY / SCAGENT_LLM_API_KEY）
+    token_error: Optional[str]      # 访问令牌（SCAGENT_TOKEN）；两者互不牵连
 
     # ── 服务 ────────────────────────────────────────────────────────────────
     host: str
@@ -212,13 +213,25 @@ def load_settings() -> Settings:
         or None
     )
     # ── 密钥：支持 *_FILE（Docker secrets），失败即记录错误、不静默回退 ──
-    config_error: Optional[str] = None
+    #
+    # 两个密钥**各自 try**：早先写成一个 try 包住两次读取，于是"LLM 密钥文件坏了"
+    # 会把已经读到的 scagent_token 一起丢掉 → SETTINGS.token 变成空串 →
+    # server.py 判成"未设置令牌"并拒绝服务（503 / 启动即退出）。
+    # 现象与原因完全对不上，排查成本极高。
+    config_error: Optional[str] = None      # LLM 密钥相关（llm_ready 会引用）
+    token_error: Optional[str] = None       # 访问令牌相关（只在报错文案里用）
+
     try:
         api_key = _secret("SCAGENT_LLM_API_KEY", "DEEPSEEK_API_KEY")
-        token = _secret("SCAGENT_TOKEN") or ""
     except SecretError as exc:
         config_error = str(exc)
-        api_key, token = None, ""
+        api_key = None
+
+    try:
+        token = _secret("SCAGENT_TOKEN") or ""
+    except SecretError as exc:
+        token_error = str(exc)
+        token = ""
 
     if api_key is None and provider == "ollama":
         api_key = "ollama"          # ollama 不校验 key
@@ -247,6 +260,7 @@ def load_settings() -> Settings:
         host=_get("SCAGENT_API_HOST", "0.0.0.0"),
         port=_get_int("SCAGENT_API_PORT", 8080),
         config_error=config_error,
+        token_error=token_error,
         token=token,
         hitl_mode=_get("SCAGENT_HITL", "interactive").strip().lower(),
         max_concurrent_runs=_get_int("SCAGENT_MAX_CONCURRENT_RUNS", 2),

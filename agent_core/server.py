@@ -301,12 +301,21 @@ async def lifespan(app: FastAPI):
         raise SystemExit(2)
 
     if not SETTINGS.token:
-        log("startup_error", reason="SCAGENT_TOKEN 未设置")
-        print("❌ 未设置 SCAGENT_TOKEN —— 服务拒绝启动。\n"
-              "   生成方式： cp deploy/.env.sample deploy/.env && chmod 600 deploy/.env\n"
-              "             把 SCAGENT_TOKEN 填成 $(openssl rand -hex 24)\n"
-              "   生产环境建议用 Docker secrets： SCAGENT_TOKEN_FILE=/run/secrets/scagent_token",
-              file=sys.stderr)
+        # 区分"没配"和"配了但读不到"—— 后者（文件缺失/空/无权限）此前只说"未设置"，
+        # 把真正的原因藏了起来（见 deploy 侧的 secrets 排查）
+        if SETTINGS.token_error:
+            log("startup_error", reason=SETTINGS.token_error)
+            print(f"❌ 访问令牌读取失败：{SETTINGS.token_error}\n"
+                  "   检查：SCAGENT_TOKEN_FILE 指向的文件是否存在、非空、容器的运行用户可以读；\n"
+                  "   自检： ./scripts/check_secrets.sh --prod",
+                  file=sys.stderr)
+        else:
+            log("startup_error", reason="SCAGENT_TOKEN 未设置")
+            print("❌ 未设置 SCAGENT_TOKEN —— 服务拒绝启动。\n"
+                  "   生成方式： cp deploy/.env.sample deploy/.env && chmod 600 deploy/.env\n"
+                  "             把 SCAGENT_TOKEN 填成 $(openssl rand -hex 24)\n"
+                  "   生产环境建议用 Docker secrets： SCAGENT_TOKEN_FILE=/run/secrets/scagent_token",
+                  file=sys.stderr)
         raise SystemExit(2)
 
     ok, why = SETTINGS.llm_ready()
