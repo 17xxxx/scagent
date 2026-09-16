@@ -68,106 +68,58 @@ scagent/
 ├── .devcontainer/               # VS Code DevContainer 配置
 │   ├── devcontainer.json
 │   └── docker-compose.yml       # agent + seurat 双服务编排
+├── DEPLOY.md                    # 部署指南（面向部署者）
+├── DEVELOPMENT.md               # 开发环境说明（面向开发者）
+├── FAQ.md                       # 常见问题
 └── TOOLS_HELP.txt               # 工具参数参考文档
 ```
 
-## 生产部署
-
-面向部署者的完整说明见 **[DEPLOY.md](DEPLOY.md)**（Linux 与 Windows/Docker Desktop 两种单机部署、数据与参考数据集放置、日常运维），
-常见问题见 **[FAQ.md](FAQ.md)**。
-
-> 维护者发布镜像：`.github/workflows/publish-images.yml`（Actions 里手动触发，或 `git tag v1.0.0 && git push origin v1.0.0`），
-> 产物为 `ghcr.io/<owner>/scagent/scagent-{runtime,seurat,agent}:<版本>`；部署方把 `SCAGENT_IMAGE_PREFIX` 指到该前缀即可。
-
-> 下面这一节是**开发环境**（VS Code Dev Container）的快速开始。
-
 ## 快速开始
 
-### 前置条件
+> 部署者按下面四步走即可。每步的细节、Windows 命令与排错见 **[DEPLOY.md](DEPLOY.md)**。
 
-- Docker + Docker Compose
-- VS Code + Dev Containers 扩展（推荐）
+| 步骤 | 做什么 | 命令 |
+|---|---|---|
+| ① 获取代码 | `git clone` 到本机（不要下载 ZIP，原因见 FAQ） | `git clone <仓库地址> scagent` |
+| ② 配置 | 生成配置与密钥 —— **这一步会要求粘贴 LLM API Key** | Linux：`./deploy/configure.sh`<br>Windows：`deploy\install.cmd` |
+| ③ 启动 | 拉取或构建镜像并启动（Windows 的 `install` 已包含这一步） | Linux：`./deploy/up.sh`<br>Windows：`deploy\scagent.cmd up` |
+| ④ 放数据并使用 | 把 10X 数据放进工作目录，浏览器访问并粘贴访问令牌 | 见 [DEPLOY.md](DEPLOY.md) §5 |
 
-### 1. 准备数据
-
-将 10X 格式的原始数据放入 `data/rawdata/` 目录，每个样本一个子文件夹，文件夹内直接存放三个文件：
-
-```
-data/rawdata/
-├── sample1/
-│   ├── barcodes.tsv.gz
-│   ├── features.tsv.gz
-│   └── matrix.mtx.gz
-├── sample2/
-│   ├── barcodes.tsv.gz
-│   ├── features.tsv.gz
-│   └── matrix.mtx.gz
-└── ...
-```
-
-### 2. 准备密钥
-
-密钥**不通过 `.env` 注入容器**，而是生成到项目目录之外，再以 Docker secrets
-文件形式挂载 —— 这样密钥不会出现在 `docker inspect`、镜像层或环境变量中。
-
-```bash
-./scripts/setup_secrets.sh          # 交互式索取，写入权限 600 的文件
-```
-
-产出（默认在 `~/.config/scagent/`）：
-
-| 文件 | 内容 |
-|---|---|
-| `deepseek_api_key` | LLM API Key（形如 `sk-...`） |
-| `scagent_token` | 客户端访问令牌，**必填** —— 缺失时 `server.py` 拒绝启动 |
-
-> **必须放在项目外**：开发编排挂载了整个仓库（`..:/workspace`），
-> 放在项目内的密钥文件会随挂载进入容器，secrets 就失去意义。
+> **想跳过首次 30–90 分钟的本机构建？** 用已发布镜像，只在第 ② 步多给一个参数。
+> 两个源任选（镜像由不同环境构建，功能一致，详见 [DEPLOY.md](DEPLOY.md) §0）：
 >
-> 已有 `.env` 时脚本会自动从中读取；`--check` 只检查现状不写文件。
-> 容器内实际读取的是 `SCAGENT_LLM_API_KEY_FILE` / `SCAGENT_TOKEN_FILE`
-> 指向的这两个文件（见 `.devcontainer/docker-compose.yml`）。
+> ```bash
+> # Linux / WSL：二选一（下面两条只跑一条，再跑 ./deploy/up.sh）
+> # ① 默认：GitHub（GHCR）
+> ./deploy/configure.sh --image-source public --image-prefix ghcr.io/17xxxx/scagent
+>
+> # ② 中国大陆网络更快：阿里云 ACR（首次约 2.4 GB）
+> ./deploy/configure.sh --image-source public \
+>   --image-prefix crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen
+> ```
+>
+> ```powershell
+> # Windows：把上面的命令换成 install.cmd，其余相同
+> deploy\install.cmd -ImageSource public -ImagePrefix ghcr.io/17xxxx/scagent
+> deploy\install.cmd -ImageSource public -ImagePrefix crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen
+> ```
+>
+> 注意：**不指定就是本机构建**（`local`，首次 30–90 分钟），Windows 的 `install` 不会询问镜像来源。
 
-### 3. 构建镜像（首次约 30–90 分钟）
+三件事先知道，可以省掉大部分弯路：
 
-镜像分两层，`seurat_backend/Dockerfile` 的 `FROM` 指向 runtime 镜像，
-**必须先构建 runtime 层** —— 直接 `docker compose build` 会因基础镜像不存在而失败：
+- **LLM API Key**：在第 ② 步输入，存放在安装根目录下的 `secrets/deepseek_api_key`（独立文件，不写进 `.env`）；**没有它服务无法启动**。
+- **数据放哪**：`<安装根>/workspace/data/rawdata/<样本名>/` —— 每个样本一个子目录，`barcodes` / `features` / `matrix` 三个文件直接放里面；**不是**仓库目录里的 `data/`。
+- **访问令牌**：同目录下的 `scagent_token`，浏览器首次访问时粘贴它的内容。
 
-```bash
-./scripts/dev_build.sh              # 首次：runtime + 应用层
-./scripts/dev_build.sh --app-only   # 之后只改了 R/Python 代码：数秒完成
-```
+## 文档
 
-### 4. 启动容器
-
-在 VS Code 中打开项目，点击左下角绿色按钮选择 "Reopen in Container"，或手动启动：
-
-```bash
-docker compose -f .devcontainer/docker-compose.yml up -d
-```
-
-### 5. 运行
-
-容器默认 `sleep infinity` 常驻，服务需手动启动。按需选择入口：
-
-```bash
-DC="docker compose -f .devcontainer/docker-compose.yml"
-
-# A. HTTP 服务 + 网页界面 → http://127.0.0.1:8080
-$DC exec agent python /workspace/agent_core/server.py
-
-# B. 本地交互式 CLI（开发 / 调试用）
-$DC exec agent python /workspace/agent_core/agent_main.py
-
-# C. 确定性流水线（无需 LLM、无需 API Key）
-$DC exec agent python /workspace/agent_core/pipeline_cli.py status
-```
-
-> 网页界面首次打开会要求输入 `scagent_token` 的内容作为访问令牌。
-
-> ⚠️ **关于 `.env`**：只有 `agent_main.py` 会通过 `load_dotenv()` 读取项目根的
-> `.env`；`server.py`、`pipeline_cli.py` 和 `docker compose` 都**不读取** `.env`。
-> 因此 `.env` 仅适合本地调试，正式配置请一律走第 2 步的 secrets。
+| 文档 | 面向 | 内容 |
+|---|---|---|
+| [DEPLOY.md](DEPLOY.md) | 部署者 | 部署速览、镜像来源、配置项、数据与参考数据集放置、日常运维、命令速查 |
+| [FAQ.md](FAQ.md) | 部署者 / 使用者 | 常见问题，按「症状 → 原因 → 处置」组织 |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | 开发者 | VS Code Dev Container 工作流、目录约定、构建与运行入口、自检脚本、发布镜像 |
+| [TOOLS_HELP.txt](TOOLS_HELP.txt) | 使用者 / 开发者 | 10 个工具的参数参考 |
 
 ## 使用方式
 

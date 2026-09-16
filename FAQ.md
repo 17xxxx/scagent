@@ -57,10 +57,33 @@ sudo usermod -aG docker $USER && newgrp docker      # 重新登录后生效
 ### 6. 访问令牌在哪里？忘了怎么办
 
 ```bash
-cat $SCAGENT_SECRETS_DIR/scagent_token      # 密钥目录里的 scagent_token 文件
+cat /srv/scagent/secrets/scagent_token          # Linux 默认安装根下的密钥文件
+# Windows： type D:\scagent\secrets\scagent_token
+# 开发容器：cat ~/.config/scagent/scagent_token
 ```
 
 丢失或想更换：删除该文件后重跑 `./deploy/configure.sh`（或 Windows 的 `deploy\scagent.cmd secrets`），随后 `./deploy/up.sh` 让容器重新读取。
+
+### 6b. LLM API Key 存在哪里？什么时候输入？
+
+**输入时机**：配置向导（Linux `./deploy/configure.sh` / Windows `deploy\install.cmd`）的第 3 步
+"密钥与数据目录"会要求粘贴，输入不回显。非交互安装可用 `--deepseek-key`（Linux）/
+`-DeepSeekKey`（Windows）传入。
+
+**存放位置**：安装根目录下的 `secrets/deepseek_api_key`，是一个**独立文件** ——
+不写进 `deploy/.env`、不进容器环境变量、不进 `docker inspect`。
+
+| 场景 | 路径 |
+|---|---|
+| 生产部署（Linux） | `/srv/scagent/secrets/deepseek_api_key`（安装根可自定义） |
+| 生产部署（Windows） | `<安装根>\secrets\deepseek_api_key`，安装根默认是仓库所在目录的上一级 |
+| 开发容器 | `~/.config/scagent/deepseek_api_key` |
+
+**换一个 Key**：`./deploy/configure.sh --force`（Linux）或 `deploy\scagent.cmd secrets`（Windows）；
+也可以直接改上面那个文件（UTF-8、无换行、权限 600），再 `up` 一次。
+
+> 缺这个文件时 **agent 会拒绝启动**（容器反复重启），不是"能跑但不会规划"。
+> 只跑确定性流水线可以改用 `pipeline_cli.py`（见第 16 条）。
 
 ---
 
@@ -76,7 +99,16 @@ cat $SCAGENT_SECRETS_DIR/scagent_token      # 密钥目录里的 scagent_token �
 ./deploy/doctor.sh      # 会同时打印"容器实际挂载的路径"与"你配置的路径"
 ```
 
-正确位置：`<SCAGENT_WORKSPACE>/data/rawdata/<样本名>/{barcodes,features,matrix}.tsv.gz`。
+正确位置（**生产部署**）：`<安装根>/workspace/data/rawdata/<样本名>/{barcodes,features,matrix}.tsv.gz`
+
+```
+D:\projects\workspace\data\rawdata\sample1\      ← Windows 例：安装根 = D:\projects
+/srv/scagent/workspace/data/rawdata/sample1/    ← Linux 例
+```
+
+**开发容器**（VS Code Dev Container）则相反：数据放**仓库内**的 `data/rawdata/<样本名>/`。
+两种用法共用同一套镜像，区别只在目录约定 —— 生产把数据放在仓库之外，
+开发把整个仓库挂在 `/workspace`（见 `DEVELOPMENT.md` 的「目录约定」）。
 
 ### 8. 报告"参考集缺失"，细胞类型注释跑不了
 
@@ -167,21 +199,26 @@ $env:APT_MIRROR="https://mirrors.aliyun.com/ubuntu"; deploy\scagent.cmd build -F
 **处置**：配置时直接指定前缀，然后启动（本机没有镜像时会自动拉取，**不需要 `build`**）：
 
 ```bash
-# Linux / WSL
+# Linux / WSL：前缀二选一，然后 ./deploy/up.sh
+# ① 默认：GitHub（GHCR）
+./deploy/configure.sh --image-source public --image-prefix ghcr.io/17xxxx/scagent
+
+# ② 中国大陆网络更快：阿里云 ACR
 ./deploy/configure.sh --image-source public \
   --image-prefix crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen
 ./deploy/up.sh
 ```
 
 ```powershell
-# Windows
-deploy\install.cmd -ImageSource public -ImagePrefix crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen
+# Windows（前缀二选一，同上）
+deploy\install.cmd -ImageSource public -ImagePrefix ghcr.io/17xxxx/scagent
 ```
 
 已经装好、只想换镜像源的，改 `deploy/.env` 的 `SCAGENT_IMAGE_PREFIX` 这两行再 `up` 也可以。
 
-上面这个前缀是中国大陆网络推荐的国内镜像，公开仓库、**不需要 `docker login`**；其他可选源见 `DEPLOY.md` §0。
-首次拉取约 **2.4 GB**（按压缩层计），之后启动只需几秒。注意前缀里**不要**再拼 `scagent-` —— 镜像名由程序拼成 `<前缀>/scagent-<服务>:<版本>`。
+两个源都是公开仓库、**不需要 `docker login`**，镜像由不同环境构建、功能一致（见 `DEPLOY.md` §0）。
+首次拉取按压缩层计约 **3.1 GB（GHCR）/ 2.4 GB（阿里云）**，之后启动只需几秒。
+注意前缀里**不要**再拼 `scagent-` —— 镜像名由程序拼成 `<前缀>/scagent-<服务>:<版本>`。
 
 ### 12. 服务拉不到镜像 / 提示认证失败（私有 registry）
 

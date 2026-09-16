@@ -12,11 +12,80 @@
 
 部署完成后，**使用者不需要安装任何软件**：打开浏览器访问 `http://<主机>:8080`，输入一次访问令牌即可使用。
 
-> 开发环境（VS Code Dev Container）的说明在 `README.md` 的「快速开始」一节。
+> 开发环境（VS Code Dev Container）的说明在 **[DEVELOPMENT.md](DEVELOPMENT.md)**。
+
+---
+
+## 部署速览（先读这一节）
+
+### 1. 部署会建立哪三个目录
+
+配置向导（Linux 的 `configure.sh` / Windows 的 `install.cmd`）会先问一个**安装根目录**，
+然后在其下自动建立三个目录：
+
+| 目录 | 内容 | 你要做什么 |
+|---|---|---|
+| `<安装根>/secrets/` | `deepseek_api_key`（LLM 密钥）、`scagent_token`（访问令牌） | 安装时按提示输入，或事后补；**不要**放进仓库、不要提交 |
+| `<安装根>/workspace/` | `data/`（你的原始数据 + 全部分析产物）、`state/`（会话与审批记录） | **10X 数据放这里**（见第 3 点） |
+| `<安装根>/biodata/` | 参考数据集（细胞类型注释用） | 用一条命令获取一次（见 §5） |
+
+**安装根目录的默认值**
+
+| 平台 | 默认 | 说明 |
+|---|---|---|
+| Windows | 仓库所在目录的**上一级**（若仓库目录名不是 `scagent`，则为 `<系统盘>:\scagent`） | 例：仓库在 `D:\projects\scagent`，则安装根是 `D:\projects`，工作目录是 `D:\projects\workspace` |
+| Linux / WSL | `/srv/scagent`（向导会问，可直接改） | 建议放在仓库之外 |
+
+> 放在**仓库之外**的目的：重新 `git clone` 或删除仓库都不会碰到你的数据与密钥，
+> 也不会被误打包、误提交。
+
+### 2. 四步走
+
+| 步骤 | Linux / WSL | Windows |
+|---|---|---|
+| ① 配置（**在这一步输入 LLM API Key**） | `./deploy/configure.sh` | `deploy\install.cmd` |
+| ② 启动 | `./deploy/up.sh` | `deploy\scagent.cmd up` |
+| ③ 放数据 | 见第 3 点 | 见第 3 点 |
+| ④ 使用 | 浏览器打开 `http://<主机>:8080`，粘贴 `scagent_token` 的内容 | 同 |
+
+Windows 的 `install.cmd` 会一路做到启动（等价于 ①+②）。
+
+### 3. 我的数据应该放在哪个文件夹？
+
+```
+<安装根>/workspace/data/rawdata/<样本名>/
+├── barcodes.tsv.gz
+├── features.tsv.gz
+└── matrix.mtx.gz
+```
+
+- 每个样本一个子目录，三个文件**直接放在该子目录下**，文件名不要带样本名前缀；
+  `.gz` 或未压缩均可；
+- Windows 例：`D:\projects\workspace\data\rawdata\sample1\`；
+- ⚠️ 是**工作目录**下的 `data/rawdata/`，**不是**仓库目录里的 `data/` —— 这是最常见的放错位置；
+- 不确定时执行 `./deploy/doctor.sh`（Windows：`deploy\scagent.cmd doctor`），
+  它会打印**容器实际挂载的路径**与**你配置的路径**，两者一致才算放对。
+
+### 4. LLM API Key 在哪里输入、存到了哪里？
+
+| 问题 | 答案 |
+|---|---|
+| 哪一步输入 | 配置向导的第 3 步（"密钥与数据目录"）。它会提示粘贴，输入不回显；非交互安装可用 `--deepseek-key`（Linux）/ `-DeepSeekKey`（Windows）传入 |
+| 存到哪 | **`<安装根>/secrets/deepseek_api_key`** —— 一个独立文件，不写进 `deploy/.env`、不进容器环境变量、不进 `docker inspect` |
+| 事后补/改 | `./deploy/configure.sh --force`（Linux）或 `deploy\scagent.cmd secrets`（Windows）；也可直接把新 Key 写进上面那个文件（UTF-8、无换行、权限 600）后 `up` 一次 |
+| 访问令牌 | 同目录的 `scagent_token`，浏览器首次访问时粘贴它的内容；忘了就 `cat <安装根>/secrets/scagent_token` |
+
+> **没有密钥服务无法启动**：agent 启动时会校验 LLM 配置，缺密钥会直接退出、容器反复重启
+> （只跑确定性流水线时改用 `pipeline_cli.py`，见 `FAQ.md`）。
 
 ---
 
 ## 0. 先选镜像来源
+
+> **默认是「本机构建」**（`SCAGENT_IMAGE_SOURCE=local`），首次约 **30–90 分钟**（大部分时间在装 R 包）。
+> 想跳过它，配置时显式指定已发布镜像即可（见本节末「已发布的镜像」）。
+> 注意 Windows 的 `install.cmd` **不会询问**镜像来源，默认同样是本机构建 ——
+> 要改用已发布镜像必须显式加 `-ImageSource public -ImagePrefix <前缀>`。
 
 | 路径 | 适用场景 | 首次耗时 |
 |---|---|---|
@@ -30,28 +99,34 @@
 
 | 镜像源 | `SCAGENT_IMAGE_PREFIX` 填什么 | 说明 |
 |---|---|---|
-| **阿里云 ACR**（中国大陆推荐） | `crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen` | 公开仓库，**无需登录**，国内拉取快 |
+| **GitHub 容器仓库（GHCR）** —— 默认 | `ghcr.io/17xxxx/scagent` | 公开仓库，**无需登录**；由 GitHub Actions 从源码构建；首次拉取约 3.1 GB |
+| 阿里云 ACR（中国大陆网络更快） | `crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen` | 公开仓库，**无需登录**；首次拉取约 2.4 GB |
 
-**用法（一条命令）** —— 生成配置时直接指定前缀，然后启动即可，**不需要 `build`**：
+两个源的镜像在不同环境构建（GitHub Actions / 本地构建），层摘要与体积略有差异，功能一致；
+选一个即可，也可以混用（改前缀 + `up` 一次）。中国大陆直连 ghcr.io 通常明显慢于国内镜像源，
+网络受限时可直接用阿里云 ACR。
+
+**用法（一条命令）** —— 生成配置时直接指定前缀，然后启动即可，**不需要 `build`**。
+以下示例用默认的 GHCR；用阿里云把 `--image-prefix` 换成上面表格里那一行即可。
 
 ```bash
 # Linux / WSL
 ./deploy/configure.sh --image-source public \
-  --image-prefix crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen
+  --image-prefix ghcr.io/17xxxx/scagent
 ./deploy/up.sh            # 本机没有镜像时会自动拉取
 ./deploy/verify.sh
 ```
 
 ```powershell
 # Windows（install 会一路装到启动）
-deploy\install.cmd -ImageSource public -ImagePrefix crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen
+deploy\install.cmd -ImageSource public -ImagePrefix ghcr.io/17xxxx/scagent
 ```
 
 **已经装好、只想换成已发布镜像**：改 `deploy/.env` 里这两行，再 `up` 一次即可：
 
 ```ini
 SCAGENT_IMAGE_SOURCE=public
-SCAGENT_IMAGE_PREFIX=crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen
+SCAGENT_IMAGE_PREFIX=ghcr.io/17xxxx/scagent
 SCAGENT_VERSION=1.0.0
 ```
 
@@ -68,15 +143,18 @@ deploy\scagent.cmd verify
 只想先把镜像拉下来看看（不启动服务）：
 
 ```bash
+docker pull ghcr.io/17xxxx/scagent/scagent-seurat:1.0.0
+docker pull ghcr.io/17xxxx/scagent/scagent-agent:1.0.0
+
+# 阿里云 ACR（把前缀整体替换即可）
 docker pull crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen/scagent-seurat:1.0.0
-docker pull crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen/scagent-agent:1.0.0
 ```
 
 > **前缀里不要自己再拼 `scagent-`** —— 程序会补上：镜像名 = `<前缀>/scagent-<服务>:<版本>`。
-> 例如前缀 `…/sqxopen` 对应镜像 `…/sqxopen/scagent-seurat:1.0.0`。
+> 例如前缀 `ghcr.io/17xxxx/scagent` 对应镜像 `ghcr.io/17xxxx/scagent/scagent-seurat:1.0.0`。
 >
-> 首次拉取约 **2.4 GB**（`scagent-seurat` 2.28 GB + `scagent-agent` 0.08 GB，按压缩层计），之后启动只需几秒。
-> `docker images` 里显示的约 8 GB 是**解压口径**，不是下载量。
+> 首次拉取按压缩层计约 3.1 GB（GHCR）/ 2.4 GB（阿里云），之后启动只需几秒。
+> `docker images` 里显示的体积是**解压口径**，比下载量大得多，不是下载量。
 > `scagent-runtime` 只有需要自己重建 `seurat` 层的人才要拉，普通部署用不到。
 
 ---
