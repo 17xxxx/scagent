@@ -33,26 +33,63 @@ scagent_load_env deploy/.env          # 去 CR 后再 source（Windows 编辑器
 #   优先 Docker secrets（与开发环境完全一致）；缺失时回退到 deploy/.env 环境变量。
 SECRETS_DIR="$(scagent_resolve_path "${SCAGENT_SECRETS_DIR:-./secrets}")"
 COMPOSE_FILES=(-f deploy/docker-compose.yml)
+KEY_FILE="$SECRETS_DIR/deepseek_api_key"
+TOKEN_FILE="$SECRETS_DIR/scagent_token"
 
-if [ -f "$SECRETS_DIR/deepseek_api_key" ] && [ -f "$SECRETS_DIR/scagent_token" ]; then
+# 先挡住"路径被目录占了"这种状态：Docker 在 secret 源文件缺失时会自动建同名【目录】占位
+#（file 型 secret 底层是 bind mount），之后想补真密钥会撞 Permission denied，
+# 现象与原因完全对不上。这里提前给出准确的修复动作。
+for _p in "$KEY_FILE" "$TOKEN_FILE"; do
+  if [ -d "$_p" ]; then
+    die "密钥路径是一个目录（不是文件）：$_p
+      原因：Docker 在 secret 源文件缺失时自动创建了占位目录（file 型 secret 底层是 bind mount）。
+      修复： rmdir '$_p'   然后补齐密钥： ./deploy/configure.sh --force"
+  fi
+done
+
+if [ -f "$KEY_FILE" ] && [ -f "$TOKEN_FILE" ]; then
   export SCAGENT_SECRETS_DIR="$SECRETS_DIR"
   COMPOSE_FILES+=(-f deploy/docker-compose.secrets.yml)
   USE_SECRETS=1
+  SECRETS_DESC="Docker secrets（$SECRETS_DIR）"
   # verify.sh 在宿主机上跑，需要宿主侧的令牌副本
-  SCAGENT_TOKEN="$(cat "$SECRETS_DIR/scagent_token")"
+  SCAGENT_TOKEN="$(cat "$TOKEN_FILE")"
   export SCAGENT_TOKEN
+elif [ -f "$TOKEN_FILE" ]; then
+  # 只有访问令牌、没有 LLM 密钥。
+  # 注意：这**不是**"服务仍能启动"的情形 —— agent 启动时要先过 llm_ready()，
+  # 不通过就直接 SystemExit(3)，容器会 crash-loop。
+  # 唯一不需要密钥文件的是 ollama（代码会给它补一个占位 key）。
+  provider="$(printf '%s' "${SCAGENT_LLM_PROVIDER:-deepseek}" | tr 'A-Z' 'a-z')"
+  if [ "$provider" = "ollama" ]; then
+    # 令牌仍走文件方式；只挂令牌的叠加文件，避免因缺 key 文件让 compose 整体报错
+    export SCAGENT_SECRETS_DIR="$SECRETS_DIR"
+    COMPOSE_FILES+=(-f deploy/docker-compose.secrets-token.yml)
+    USE_SECRETS=1
+    SECRETS_DESC="Docker secrets（仅访问令牌；LLM=ollama 不需要密钥）"
+    SCAGENT_TOKEN="$(cat "$TOKEN_FILE")"
+    export SCAGENT_TOKEN
+  else
+    die "只有访问令牌、没有 LLM 密钥：$KEY_FILE
+      agent 启动时要求 LLM 可用（缺密钥会直接退出、容器反复重启），所以现在不能启动。
+      三选一：
+        · 补上 LLM 密钥： ./deploy/configure.sh --force        （Windows： deploy\\scagent.cmd secrets）
+        · 用本地模型：    在 deploy/.env 里设 SCAGENT_LLM_PROVIDER=ollama（不需要密钥文件）
+        · 不用网页界面：  只跑确定性流水线 → 容器内执行 pipeline_cli.py（见 FAQ）"
+  fi
 else
   USE_SECRETS=0
-  : "${SCAGENT_TOKEN:?未找到密钥。二选一：
-      · Docker secrets： 在 $SECRETS_DIR/ 下放置 deepseek_api_key 与 scagent_token
+  SECRETS_DESC="环境变量（deploy/.env）"
+  : "${SCAGENT_TOKEN:?未找到访问令牌。二选一：
+      · Docker secrets： 在 $SECRETS_DIR/ 下放置 scagent_token
         （推荐，与开发环境一致；可运行 ./scripts/setup_secrets.sh --target $SECRETS_DIR）
       · 环境变量：       在 deploy/.env 中设置 SCAGENT_TOKEN}"
 fi
 
 if [ "$USE_SECRETS" -eq 1 ]; then
-  ok "密钥方式：Docker secrets（$SECRETS_DIR）"
+  ok "密钥方式：$SECRETS_DESC"
 else
-  ok "密钥方式：环境变量（deploy/.env）"
+  ok "密钥方式：$SECRETS_DESC"
 fi
 
 # ── 2. 镜像来源解析 + 公网回落防护 ────────────────────────────────────────────
@@ -142,18 +179,33 @@ info "启动服务"
 "${COMPOSE[@]}" up -d --force-recreate --pull "$SCAGENT_PULL_POLICY"
 
 info "等待健康检查通过（seurat 冷启动约需 120 秒）"
+HEALTHY_OK=0
 for i in $(seq 1 60); do
-  unhealthy=$("${COMPOSE[@]}" ps --format json 2>/dev/null \
-    | grep -o '"Health":"[a-z]*"' | grep -cv '"healthy"' || true)
+  # 判定"健康"必须同时看两个字段：
+  #   State  必须是 running —— 崩溃重启的容器 State=restarting；
+  #   Health 必须是 healthy（没声明 healthcheck 的容器该字段为空，不参与判定）。
+  # 只数 "unhealthy" 会漏掉崩溃重启：那种容器根本没有 Health 字段，
+  # 于是被当成健康 —— 崩溃重启的 agent 会被误报为"全部容器健康"。
+  ps_json="$("${COMPOSE[@]}" ps --format json 2>/dev/null || true)"
+  bad_state="$(printf '%s\n' "$ps_json" | grep -oE '"State":"[a-z]+"' | grep -cv '"State":"running"' || true)"
+  bad_health="$(printf '%s\n' "$ps_json" | grep -oE '"Health":"[a-z]+"' | grep -cv '"Health":"healthy"' || true)"
   total=$("${COMPOSE[@]}" ps -q 2>/dev/null | wc -l)
-  if [ "${unhealthy:-1}" -eq 0 ] && [ "${total:-0}" -ge 2 ]; then
-    ok "全部容器健康"
+  if [ "${bad_state:-1}" -eq 0 ] && [ "${bad_health:-1}" -eq 0 ] && [ "${total:-0}" -ge 2 ]; then
+    ok "全部容器 running 且 healthy"
+    HEALTHY_OK=1
     break
   fi
   printf '\r  ... 等待中 (%d/60)  ' "$i"
   sleep 5
 done
 printf '\n'
+
+if [ "$HEALTHY_OK" -eq 0 ]; then
+  warn "超时：仍有容器没达到 running+healthy —— 下面是当前状态"
+  "${COMPOSE[@]}" ps
+  warn "  排查： ${COMPOSE[*]} logs --tail 50 agent"
+  warn "        ${COMPOSE[*]} logs --tail 50 seurat"
+fi
 
 "${COMPOSE[@]}" ps
 

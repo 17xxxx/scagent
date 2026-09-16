@@ -89,17 +89,25 @@ if [ "$DEPLOYED" -eq 1 ]; then pass "已部署过"; else warn "尚未部署（�
 
 # ── 容器状态 ──────────────────────────────────────────────────────────────────
 if $COMPOSE ps -q >/dev/null 2>&1; then
-  running=$($COMPOSE ps -q | wc -l)
+  # "运行中"必须按 State=running 数 —— `ps -q` 会把崩溃重启的容器也算进去
+  running=$($COMPOSE ps --status running -q 2>/dev/null | wc -l)
   item "运行中的容器"
   if [ "$running" -ge 2 ]; then pass "$running 个"
   elif [ "$DEPLOYED" -eq 0 ]; then warn "未部署（先运行 ./deploy/up.sh）"
   else fail "只有 $running 个（期望 2）"; fi
 
-  unhealthy=$($COMPOSE ps --format json 2>/dev/null | grep -c '"unhealthy"' || true)
+  # 健康判定见 up.sh 里的同名注释：只看 "unhealthy" 会漏掉崩溃重启
+  # （那种容器没有 Health 字段）。这里同时校验 State 与 Health。
+  ps_json="$($COMPOSE ps --format json 2>/dev/null || true)"
+  bad_state="$(printf '%s\n' "$ps_json" | grep -oE '"State":"[a-z]+"' | grep -cv '"State":"running"' || true)"
+  bad_health="$(printf '%s\n' "$ps_json" | grep -oE '"Health":"[a-z]+"' | grep -cv '"Health":"healthy"' || true)"
   item "容器健康状态"
   if [ "$running" -eq 0 ] && [ "$DEPLOYED" -eq 0 ]; then warn "未部署"
-  elif [ "${unhealthy:-0}" -eq 0 ]; then pass "全部 healthy"
-  else fail "$unhealthy 个 unhealthy（docker compose logs 查看）"; fi
+  elif [ "${bad_state:-0}" -eq 0 ] && [ "${bad_health:-0}" -eq 0 ]; then pass "全部 running 且 healthy"
+  else
+    fail "有容器未在运行或未达 healthy（未运行 ${bad_state:-0} 个 / 不健康 ${bad_health:-0} 个）"
+    printf '%s\n' "  排查提示： docker compose -f deploy/docker-compose.yml logs --tail 100 agent"
+  fi
 else
   item "容器状态"; warn "docker compose 不可用或 Docker 未启动"
 fi

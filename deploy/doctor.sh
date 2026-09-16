@@ -118,7 +118,11 @@ else
   scagent_load_env "$ENV_FILE"
   pass "已加载（$(grep -cvE '^\s*(#|$)' "$ENV_FILE" 2>/dev/null || echo '?') 个有效项）"
 
-  if image_info="$(scagent_resolve_image 2>/dev/null)"; then
+  # 注意：**不能**写成 image_info="$(scagent_resolve_image)" —— 命令替换是子 shell，
+  # 它在里面导出的 SCAGENT_IMAGE_PREFIX / SCAGENT_PULL_POLICY 回不到父 shell，
+  # 而 doctor 用 set -u，那些变量就成了 unbound（手写 .env 未写 SCAGENT_PULL_POLICY 时会直接中断）。
+  # verify.sh 用的是"直接调用"，这里保持一致。
+  if scagent_resolve_image 2>/dev/null; then
     pass "镜像来源 $SCAGENT_IMAGE_SOURCE → $SCAGENT_IMAGE_PREFIX:$SCAGENT_VERSION（pull=$SCAGENT_PULL_POLICY）"
   else
     fail "镜像来源配置无效（SCAGENT_IMAGE_SOURCE / PREFIX / VERSION）"; CFG_BAD=1
@@ -163,7 +167,12 @@ if [ -d "$SECRETS_DIR" ]; then pass "$SECRETS_DIR"; else warn "不存在：$SECR
 for f in deepseek_api_key scagent_token; do
   item "密钥文件 $f"
   p="$SECRETS_DIR/$f"
-  if [ ! -f "$p" ]; then
+  if [ -d "$p" ]; then
+    # Docker 在 secret 源文件缺失时会自动建一个【同名目录】占位（file 型 secret 底层是 bind mount），
+    # 之后往里写真密钥会撞 Permission denied —— 这里显式指出来，别让它伪装成"缺失"
+    fail "是一个目录（不是文件）—— Docker 在源文件缺失时创建的占位目录"; CFG_BAD=1
+    hint "修复： rmdir '$p'   然后重新放入密钥（ ./deploy/configure.sh --force  或 Windows 的 deploy\\scagent.cmd secrets ）"
+  elif [ ! -f "$p" ]; then
     warn "缺失（install/secrets 会生成）"
   elif [ ! -r "$p" ]; then
     fail "存在但不可读 —— ACL/属主问题"; CFG_BAD=1
@@ -235,6 +244,11 @@ if [ "$DOCKER_OK" -eq 1 ] && [ -f "$ENV_FILE" ]; then
   if [ -f "$SECRETS_DIR/deepseek_api_key" ] && [ -f "$SECRETS_DIR/scagent_token" ]; then
     export SCAGENT_SECRETS_DIR
     COMPOSE_FILES+=(-f deploy/docker-compose.secrets.yml)
+  elif [ -f "$SECRETS_DIR/scagent_token" ]; then
+    # 只有令牌没有 LLM 密钥：up.sh 会挂"仅令牌"的叠加文件，这里必须一致，
+    # 否则 doctor 看到的容器与实际情况不符（同样的两文件假设，up.sh 已修）
+    export SCAGENT_SECRETS_DIR
+    COMPOSE_FILES+=(-f deploy/docker-compose.secrets-token.yml)
   fi
   COMPOSE=(docker compose "${COMPOSE_FILES[@]}")
 

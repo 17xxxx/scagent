@@ -148,11 +148,20 @@ check_one_set() {   # check_one_set <名称> <目录>
     [ -e "$f" ] || continue
     found=1
     local perm owner size
+    local name; name="$(basename "$f")"
+
+    # Docker 在 secret 源文件缺失时会建同名【目录】占位（bind mount 行为）。
+    # 目录的 size 是 4096，会被误判成"文件非空、容器可读" —— 必须单独拦。
+    if [ -d "$f" ]; then
+      bad "$name 是一个目录（不是文件）—— Docker 在源文件缺失时创建的占位目录"
+      hint "修复： rmdir $f   然后重新放入密钥文件"
+      continue
+    fi
+
     perm="$(stat -c '%a' "$f" 2>/dev/null)"
     owner="$(stat -c '%u' "$f" 2>/dev/null)"
     size="$(wc -c < "$f" 2>/dev/null)"
 
-    local name; name="$(basename "$f")"
     local problems=()
 
     if [ "$PERM_ENFORCE" -eq 1 ]; then

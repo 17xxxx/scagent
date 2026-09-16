@@ -115,8 +115,8 @@ fi
 if curl -4 -s -o /dev/null -m 10 -w '%{http_code}' https://api.deepseek.com/v1/models 2>/dev/null | grep -qE '^(200|401|403)$'; then
   ok "LLM 端点可达（api.deepseek.com）"
 else
-  warn "无法访问 api.deepseek.com —— agent 将无法规划分析步骤。
-      若已改用本地模型，请忽略；否则请检查安全组/代理。"
+  warn "无法访问 api.deepseek.com —— 密钥齐全时服务仍能启动，但每次请求都会失败。
+      若已改用本地模型请忽略；否则请检查安全组 / 代理 / DNS。"
 fi
 
 if [ "$CHECK_ONLY" -eq 1 ]; then
