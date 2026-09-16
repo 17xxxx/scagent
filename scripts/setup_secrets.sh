@@ -33,8 +33,8 @@ warn() { printf '  %s\n' "${C_Y}⚠️ ${C_0} $*"; }
 die()  { printf '  %s\n' "${C_R}❌${C_0} $*" >&2; exit 1; }
 
 # 默认落点：优先用 deploy/.env 里的 SCAGENT_SECRETS_DIR；否则放在**仓库之外**的兄弟目录。
-# （$HOME/.config/scagent 是旧默认值 —— 在 WSL 里它落在发行版文件系统内，Windows 侧看不到、
-#   备份不到，违反「安装位置必须在宿主机磁盘」的约束，见 docs/ISSUES_AND_PLAN.md C1 / G4）
+# （$HOME/.config/scagent 不适合作为默认值：在 WSL 里它落在发行版文件系统内，
+#   Windows 侧看不到、也备份不到，违反「安装位置必须在宿主机磁盘」的约束。）
 _default_target() {
   if [ -f "$ROOT/deploy/.env" ]; then
     local d
@@ -208,9 +208,8 @@ read_env() {   # read_env <变量名> <文件>
 }
 
 # ── 项目内活密钥检测 / 清理 ────────────────────────────────────────────────────
-#  为什么必须做：项目根会被 compose 的 `..:/workspace` 整个挂进容器。
-#  迁移到 secrets 后若 .env 里的真密钥还在，secrets 的安全收益就归零了 ——
-#  容器内任何进程仍能读到 /workspace/.env。
+#  必须做这一步：项目根会被 compose 的 `..:/workspace` 整个挂进容器。
+#  若 .env 里的真密钥仍在，secrets 的安全收益就归零 —— 容器内任何进程都能读到。
 live_key_files() {
   local f
   for f in "$ROOT/.env" "$ROOT"/.env.*; do

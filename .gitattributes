@@ -18,7 +18,7 @@ Dockerfile text eol=lf
 # Windows 侧脚本保留 CRLF
 #   *.ps1 必须是 UTF-8 **with BOM**：Windows PowerShell 5.1 读不含 BOM 的脚本时
 #   按 ANSI 解码，脚本里的中文会乱码甚至语法报错。
-#   注意：**不要**用 git 的 working-tree-encoding 属性实现 —— 实测本机 git 报
+#   注意：**不要**用 git 的 working-tree-encoding 属性实现 —— git 会报
 #   "failed to encode ... from UTF-8-BOM to UTF-8" 并阻断 git add/status。
 #   BOM 作为文件内容由 git 原样保存，因此这里只需保证"别让编辑器把 BOM 删掉"。
 *.ps1   text eol=crlf

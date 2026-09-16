@@ -45,4 +45,4 @@ Rscript -e 'tools::write_PACKAGES("shared_data", type="source")'
 ## 目录中的其它文件
 
 - `presto-master.zip` —— 见上（构建必需，已入库）。
-- `test.txt` —— 早期容器连通性测试的遗留文件。
+- `test.txt` —— 容器连通性测试用的小文件。

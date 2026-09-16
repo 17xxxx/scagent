@@ -4,10 +4,10 @@
 #
 #  用途：为 scAgent 的构建/部署环境配置网络访问策略与镜像源。
 #
-#  解决的三个实测问题：
-#    1. 宿主无 IPv6，但大量域名有 AAAA 记录 → curl/pip/R 默认走 IPv6 会挂起至超时
-#    2. Docker Hub (registry-1.docker.io) 直连被阻断 → 必须配置 registry-mirrors
-#    3. bioconductor.org 可达但极不稳定（传输频繁卡死）→ R 源改走 PPM
+#  针对三类网络问题：
+#    1. 宿主无 IPv6，而部分域名有 AAAA 记录 → curl/pip/R 走 IPv6 会挂起至超时
+#    2. Docker Hub (registry-1.docker.io) 直连被阻断 → 配置 registry-mirrors
+#    3. bioconductor.org 可达但传输不稳定 → R 源改走 PPM 或国内镜像
 #
 #  用法：
 #    ./scripts/setup-network.sh                 # 应用全部配置（幂等）
@@ -25,15 +25,15 @@ set -euo pipefail
 PPM_OS="${PPM_OS:-jammy}"                 # ubuntu 代号: jammy(22.04) / noble(24.04) / focal(20.04)
 PPM_CRAN="${PPM_CRAN:-https://packagemanager.posit.co/cran/__linux__/${PPM_OS}/latest}"
 BIOC_VER="${BIOC_VER:-3.22}"              # 与 seurat_backend/Dockerfile.runtime 保持一致
-# ⚠️ 不要用 packagemanager.posit.co/bioconductor/... —— 该路径实测全部 404。
-#    这里用实测可达的西湖大学镜像（软件/注释/实验数据三个子仓均已验证）。
+# ⚠️ 不要用 packagemanager.posit.co/bioconductor/... —— 该路径全部 404。
+#    此处使用西湖大学镜像（软件 / 注释 / 实验数据三个子仓均可访问）。
 BIOC_BASE="${BIOC_BASE:-https://mirrors.westlake.edu.cn/bioconductor/packages/${BIOC_VER}}"
 BIOC_MIRROR="${BIOC_MIRROR:-${BIOC_BASE}/bioc}"
 BIOC_ANN_MIRROR="${BIOC_ANN_MIRROR:-${BIOC_BASE}/data/annotation}"
 BIOC_EXP_MIRROR="${BIOC_EXP_MIRROR:-${BIOC_BASE}/data/experiment}"
 CRAN_FALLBACK="${CRAN_FALLBACK:-https://mirrors.tuna.tsinghua.edu.cn/CRAN}"
 PIP_MIRROR_URL="${PIP_MIRROR_URL:-https://mirrors.aliyun.com/pypi/simple/}"
-# 实测可用（rocker/* 与 library/* 均可取到）；顺序即优先级
+# 可用的 Docker Hub 镜像加速地址；顺序即优先级
 DOCKER_MIRRORS="${DOCKER_MIRRORS:-https://docker.1panel.live,https://hub.rat.dev,https://docker.1ms.run}"
 
 DRY_RUN=0
@@ -163,7 +163,7 @@ setup_pip() {
     want_index="$PIP_MIRROR_URL"
     skip "启用第三方镜像源: ${PIP_MIRROR_URL}（介意供应链风险请勿使用 --pip-mirror）"
   else
-    skip "不改索引源，仅补齐 timeout/retries（pypi.org 实测可用）"
+    skip "不改索引源，仅补齐 timeout/retries（默认使用 pypi.org）"
   fi
 
   # 关键：既有的 pip.conf 可能已配置了别的镜像源，绝不能整体覆盖
@@ -239,7 +239,7 @@ PY
 ${begin}
 # scAgent R 包源
 #   CRAN      : PPM 的 Linux 二进制源（免编译，快）；不可达时切 CRAN_FALLBACK
-#   Bioc*     : bioconductor.org 国内极不稳定（实测频繁卡死），改用西湖大学镜像
+#   Bioc*     : bioconductor.org 在国内不稳定，改用西湖大学镜像
 #   注意      : GO.db / org.*.eg.db 属于 data/annotation，不在软件仓 —— 必须单列 BioCann
 options(
   repos = c(

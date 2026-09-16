@@ -2,7 +2,7 @@
 """
 check_tool_schemas.py —— 工具参数 schema 自检（构建期执行）
 =============================================================
-背景：曾经出现过这样一次运行期崩溃 ——
+检查目标：避免下面这类运行期崩溃 ——
 
     pipeline_cli.py status
     → tool.invoke({"project": "x", "data_dir": None})

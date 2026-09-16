@@ -16,8 +16,7 @@
 #      ./scripts/make_dist.sh 1.0.0 --with-docs     # 额外包含 docs/（默认**不含**）
 #      ./scripts/make_dist.sh 1.0.0 --with-r-repo   # 额外包含 shared_data/ 的 R 源码包（默认**不含**，约 284 MB）
 #
-#  ⚠️ 默认不打包 docs/：其中含内部审计、安全分析与密钥前缀讨论，
-#     不适合随交付物分发（见 docs/ISSUES_AND_PLAN.md §1 与 G 类）。
+#  ⚠️ 默认不打包 docs/：其中含内部审计与安全分析，不适合随交付物分发。
 # ═══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -49,7 +48,7 @@ done
 OUT="$OUT_ROOT/scagent-deploy-$VER"
 
 # 失败时**先清场再退出** —— 否则半个交付物（可能含密钥）会留在 dist/ 里，
-# 随手 zip 一下就带出去了（见 docs/ISSUES_AND_PLAN.md G1）。
+# 随手 zip 一下就带出去了。
 die_dist() {
   printf '  %s\n' "${C_R}❌${C_0} $*" >&2
   if [ -n "${OUT:-}" ] && [ -d "${OUT:-}" ]; then

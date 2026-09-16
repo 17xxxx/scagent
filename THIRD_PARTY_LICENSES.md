@@ -1,7 +1,7 @@
 # 第三方依赖许可证清单
 
-> 本清单由 `shared_data/*.tar.gz` 中 22 个 R 包的 `DESCRIPTION` 文件**实测导出**
-> （2026-09，Bioconductor 3.22 / R 4.5.2），外加随仓库分发的
+> 本清单由 `shared_data/*.tar.gz` 中 22 个 R 包的 `DESCRIPTION` 文件导出
+> （Bioconductor 3.22 / R 4.5.2），外加随仓库分发的
 > `shared_data/presto-master.zip` 内的 `DESCRIPTION`；Python 侧由镜像内包元数据导出。
 >
 > **本项目采用 GPL-3.0**（见 `LICENSE`），原因：核心生信依赖含 GPL-3.0 组件，
@@ -21,8 +21,8 @@
 | Rhtslib | LGPL (>= 2) | 传递依赖 | 弱 copyleft |
 | **presto** | **GPL-3** | 差异表达 Wilcox/AUC 加速 | 强 copyleft，**源码随本仓库分发** |
 
-> **已实测**：`presto` 的许可证字段于 2026-09 直接从
-> `shared_data/presto-master.zip` 内的 `DESCRIPTION` 导出，结果为 `License: GPL-3`。
+> `presto` 的许可证字段取自 `shared_data/presto-master.zip` 内的 `DESCRIPTION`，
+> 结果为 `License: GPL-3`。
 >
 > **待核查**：`Seurat`、`harmony` 不在 `shared_data/` 中，尚未导出其许可证字段。
 > 按公开信息，**Seurat 通常为 GPL-3**。建议在含 R 的环境中执行以下命令补齐：
@@ -44,7 +44,7 @@
 
 ## Python 依赖
 
-实测镜像内 59 个包，许可证分布：**MIT（14）、BSD（7）、Apache-2.0（5）、
+镜像内 59 个包，许可证分布：**MIT（14）、BSD（7）、Apache-2.0（5）、
 MPL-2.0（1）**，其余元数据未声明 `License` 字段（27 个，需逐个核查，
 但 Python 生态在此依赖集内以宽松许可证为主，**未发现 GPL/AGPL**）。
 
@@ -62,7 +62,7 @@ CRAN 与 Bioconductor 均无该包；中国大陆网络访问 GitHub 常出现�
 入库可让构建机在无 GitHub 连通性时仍能完成镜像构建
 （`seurat_backend/Dockerfile.runtime:79` 用 `remotes::install_local()` 直接安装该 zip）。
 
-上游版权与许可（实测摘自 zip 内 `presto-master/DESCRIPTION`）：
+上游版权与许可（摘自 zip 内 `presto-master/DESCRIPTION`）：
 
 - `Package: presto`，`Version: 1.0.0`
 - `License: GPL-3`

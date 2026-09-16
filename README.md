@@ -121,7 +121,7 @@ data/rawdata/
 | `deepseek_api_key` | LLM API Key（形如 `sk-...`） |
 | `scagent_token` | 客户端访问令牌，**必填** —— 缺失时 `server.py` 拒绝启动 |
 
-> **为什么必须放在项目外**：开发编排挂载了整个仓库（`..:/workspace`），
+> **必须放在项目外**：开发编排挂载了整个仓库（`..:/workspace`），
 > 放在项目内的密钥文件会随挂载进入容器，secrets 就失去意义。
 >
 > 已有 `.env` 时脚本会自动从中读取；`--check` 只检查现状不写文件。
