@@ -26,13 +26,17 @@ bioc_ver <- Sys.getenv("R_BIOC_VERSION", "3.22")
 bioc_root <- sub("/+$", "", Sys.getenv("BIOC_ROOT",
                 "https://mirrors.westlake.edu.cn/bioconductor"))
 
-# ── 直接依赖清单（17 个）───────────────────────────────────────────────────────
+# ── 直接依赖清单 ──────────────────────────────────────────────────────────────
+#   原则：**只声明"我们用到的包"**，传递依赖（Depends/Imports/LinkingTo）一律交给
+#   解算器（pak）自动求解 —— 手写全量清单必然漏，也维护不动。
+#   唯一的例外是 scrapper：它是 SingleR 的 **Suggests**（解算器默认不装 Suggests），
+#   而 Step 4（细胞注释）的代码路径确实会调用它，所以必须由**我们**声明。
 pkgs <- c(
   # CRAN
   "plumber", "Seurat", "jsonlite", "patchwork", "harmony",
   # Bioconductor 软件包
   "SingleR", "celldex", "clusterProfiler", "enrichplot", "GOSemSim",
-  "DOSE", "fgsea", "ensembldb", "rtracklayer",
+  "DOSE", "fgsea", "ensembldb", "rtracklayer", "scrapper",
   # Bioconductor 注释数据包（不在软件仓，而在 data/annotation）
   "GO.db", "org.Mm.eg.db", "org.Hs.eg.db"
 )
@@ -97,6 +101,34 @@ exp <- pick_optional("Bioconductor 实验数据仓 (packages/*/data/experiment)"
 
 repos <- c(CRAN = cran, BioCsoft = bioc, BioCann = ann)
 if (!is.null(exp)) repos <- c(repos, BioCexp = exp)
+
+# ── 本地优先源（可选）：.local-r-repo/ 里已有的源码包 ─────────────────────────
+#   这是**本机**的网络缓解手段（不入库、不进镜像；见 .local-r-repo/README.md）：
+#   Dockerfile.runtime 用 `--mount=type=bind,ro` 把它挂到 /tmp/local-r-repo，
+#   这里给它建索引并**排在远端仓库前面** —— 本地有的包完全不联网，没有的自动回落远端。
+#   没有这个目录/内容时，行为与以前完全一致（全部走远端镜像）。
+local_repo <- Sys.getenv("SCAGENT_LOCAL_R_REPO", "/tmp/local-r-repo")
+local_pkgs <- if (dir.exists(local_repo)) list.files(local_repo, pattern = "[.]tar[.]gz$", full.names = TRUE) else character(0)
+if (length(local_pkgs) > 0) {
+  # 挂载是只读的，而 write_PACKAGES() 要往仓库目录写索引 —— 所以先做一个可写的"镜像目录"，
+  # 用符号链接指向原始文件（不复制内容，构建层里只多几十字节），再在可写目录建索引。
+  mirror <- file.path(tempdir(), "local-r-repo")
+  dir.create(mirror, showWarnings = FALSE, recursive = TRUE)
+  linked <- vapply(local_pkgs, function(f) {
+    isTRUE(file.symlink(f, file.path(mirror, basename(f)))) ||
+      isTRUE(file.copy(f, mirror, overwrite = TRUE))
+  }, logical(1))
+  ok_idx <- tryCatch({
+    tools::write_PACKAGES(mirror, type = "source")
+    TRUE
+  }, error = function(e) { cat("      [WARN] 本地包索引生成失败:", conditionMessage(e), "\n"); FALSE })
+  if (ok_idx && any(linked)) {
+    cat(sprintf("      本地优先源: %d 个源码包（只读挂载 → 可写索引 %s）\n", sum(linked), mirror))
+    repos <- c(localCRAN = paste0("file://", mirror), repos)
+  }
+} else {
+  cat("      本地优先源: 无（.local-r-repo/ 为空，全部走远端镜像；见该目录 README）\n")
+}
 
 # ── 关键：用 options() 设置仓库，而不是给 pkg_install 传 repos= ───────────────
 #   pak::pkg_install() **没有 repos 参数**；它从 options(repos) 读取。

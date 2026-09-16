@@ -37,11 +37,19 @@ RUN if find /workspace -name "*.rds" -o -name "*.RDS" | grep -q . ; then \
     fi
 
 # ── 运行时路径约定（均可被环境变量覆盖）──────────────────────────────────────
+#   默认值与 deploy/docker-compose.yml 保持一致：数据根是 /data（R2 清理）。
 ENV SCAGENT_BACKEND_DIR=/workspace/seurat_backend \
-    SCAGENT_DATA_DIR=/workspace/data \
+    SCAGENT_DATA_DIR=/data \
     SCAGENT_REFDATA_DIR=/ref/celldex \
     SCAGENT_API_HOST=0.0.0.0 \
     SCAGENT_API_PORT=9000
+
+# ── 非 root 运行（C9 / 决-13）────────────────────────────────────────────────
+#   与 agent 镜像保持一致：**uid 1000**（基镜像自带的 rstudio 用户）。
+#   用数字 uid 表达，避免依赖用户名；代码目录 chown 给 1000，
+#   使任何"想往代码目录写日志/临时文件"的行为也不会因权限失败。
+RUN chown -R 1000:1000 /workspace/seurat_backend
+USER 1000:1000
 
 WORKDIR /workspace
 

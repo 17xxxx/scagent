@@ -144,18 +144,28 @@ run_enrichment <- function(...) {
   seurat_obj <- readRDS(rds_path)
 
   # 读取标记基因 CSV
-  marker_csv_path <- file.path(input_dir, paste0(project_name, "_cluster_markers.csv"))
-  if (!file.exists(marker_csv_path)) {
-    marker_csv_path <- file.path(scagent_step_dir("cell_annotation"),
-                                 paste0(project_name, "_cluster_markers.csv"))
+  # 用【注释索引里记录的项目名】去找 markers，而不是当前请求的项目名 ——
+  # 否则"用项目 A 注释、再用项目 B 富集"会因文件名对不上而误报"请先运行细胞注释"。
+  marker_project <- tryCatch(as.character(unlist(obj_info$project))[1],
+                             error = function(e) NA_character_)
+  if (is.na(marker_project) || !nzchar(marker_project)) marker_project <- project_name
+
+  marker_csv_path <- file.path(input_dir, paste0(marker_project, "_cluster_markers.csv"))
+  if (!file.exists(marker_csv_path) && !identical(marker_project, project_name)) {
+    marker_csv_path <- file.path(input_dir, paste0(project_name, "_cluster_markers.csv"))
   }
   if (!file.exists(marker_csv_path)) {
-    log_msg("  错误: 找不到 cluster_markers.csv")
+    log_msg("  错误: 找不到 cluster_markers.csv（已按项目名 '", marker_project,
+            "' 与 '", project_name, "' 查找 ", input_dir, "）")
     sink()
     close(log_con)
-    return(list(status = "error", message = "cluster_markers.csv 不存在，请先运行细胞注释"))
+    return(list(status = "error",
+                message = paste0("cluster_markers.csv 不存在，请先运行细胞注释",
+                                 "（已按项目名 '", marker_project, "' 与 '",
+                                 project_name, "' 查找 ", input_dir, "）")))
   }
 
+  log_msg("  标记基因表来源项目:", marker_project)
   cluster_markers <- read.csv(marker_csv_path, stringsAsFactors = FALSE)
   log_msg("  标记基因表:", marker_csv_path)
 

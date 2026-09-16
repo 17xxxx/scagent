@@ -5,7 +5,7 @@
 # ║  所有路径均来自环境变量，代码中的默认值只是容器内的约定值。                     ║
 # ║                                                                              ║
 # ║  环境变量：                                                                   ║
-# ║    SCAGENT_DATA_DIR     数据根目录（全部产物的父目录）  默认 /workspace/data    ║
+# ║    SCAGENT_DATA_DIR     数据根目录（全部产物的父目录）  默认 /data             ║
 # ║    SCAGENT_BACKEND_DIR  R 脚本目录                     默认 /workspace/seurat_backend ║
 # ║    SCAGENT_REFDATA_DIR  参考集目录（只读数据卷挂载）     默认 /ref/celldex       ║
 # ║                                                                              ║
@@ -16,7 +16,8 @@
 # ── 路径来源 ──────────────────────────────────────────────────────────────────
 
 scagent_data_root <- function() {
-  Sys.getenv("SCAGENT_DATA_DIR", "/workspace/data")
+  # 与镜像 ENV / docker-compose 保持一致（R2 清理）；compose 会显式覆盖
+  Sys.getenv("SCAGENT_DATA_DIR", "/data")
 }
 
 scagent_backend_dir <- function() {

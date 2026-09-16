@@ -87,6 +87,17 @@ run_dimplot <- function(...) {
   if (!is.null(json$width))       width_val      <- json$width
   if (!is.null(json$height))      height_val     <- json$height
 
+  # ── 兼容性防护：split.by 与 label 不能同时开启 ──────────────────────────────
+  #   Seurat 的限制：按样本拆分后，每个分面只标注自己的簇，而标签向量来自全部簇，
+  #   于是报 "Length of labels (N) must be equal to the number of clusters being labeled (M)"。
+  #   与其报错，不如自动关掉标签并说明 —— 调用方（CLI / Agent / 网页）不必知道这条限制。
+  if (!is.null(split_by_col) && isTRUE(label_val)) {
+    label_val <- FALSE
+    .split_label_note <- TRUE          # 记下来，等日志打开后再打印
+  } else {
+    .split_label_note <- FALSE
+  }
+
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
   # ── 日志系统 ──
@@ -151,6 +162,10 @@ run_dimplot <- function(...) {
   log_msg("  参数: group.by  =", paste(group_by_cols, collapse = ", "))
   log_msg("  参数: pt.size   =", pt_size)
   log_msg("  参数: label     =", label_val)
+  if (isTRUE(.split_label_note)) {
+    log_msg("  注意: split.by 与 label 不兼容（Seurat 限制），已自动关闭标签；")
+    log_msg("        若需要带标签的图，请把 split_by 设为 null 再跑一次。")
+  }
   log_msg("  参数: repel     =", repel_val)
   log_msg("  参数: split.by  =", if (is.null(split_by_col)) "NULL" else split_by_col)
   log_msg("  参数: order     =", order_val)

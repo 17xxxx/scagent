@@ -19,6 +19,24 @@ LABEL scagent.component="runtime" \
       scagent.bioc.version="3.22"
 
 # ── 系统依赖 ──────────────────────────────────────────────────────────────────
+#  可选的 apt 镜像源（受限网络下用）：
+#   默认留空 = 用官方源（archive/security.ubuntu.com）。若你的网络访问官方源不稳定
+#   （常见表现：`apt-get` 退出码 100、卡在 Get/InRelease），可换国内镜像：
+#       docker compose -f deploy/docker-compose.build.yml build \
+#         --build-arg APT_MIRROR=https://mirrors.aliyun.com/ubuntu runtime
+#   或在 deploy/.env 里写一行 `APT_MIRROR=https://mirrors.aliyun.com/ubuntu`
+#   （build.sh / deploy\scagent.cmd build 会自动透传）。
+#   ⚠️ 请**在首次构建前**决定：apt 层一旦改变，其上的所有层（含 R 包安装，30–90 分钟）都要重建
+#      —— 这是 Docker 分层机制的必然结果（实测：只改一个只在前一步使用的构建参数，
+#      后续不引用它的步骤也会失去缓存）。
+ARG APT_MIRROR=""
+RUN if [ -n "$APT_MIRROR" ]; then \
+      echo "使用 apt 镜像源: $APT_MIRROR"; \
+      sed -i -E "s#https?://(archive|security)\.ubuntu\.com/ubuntu/?#${APT_MIRROR%/}#g" \
+        /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true; \
+      grep -hE "^URIs:" /etc/apt/sources.list.d/*.sources 2>/dev/null || true; \
+    fi
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
       libglpk40 cmake libssl-dev libcurl4-openssl-dev libxml2-dev \
       libhdf5-dev libbz2-dev liblzma-dev \
@@ -68,20 +86,47 @@ ENV PPM_CRAN=${PPM_CRAN} \
     CRAN_FALLBACK=${CRAN_FALLBACK} \
     BIOC_ROOT=${BIOC_ROOT}
 
-# ── 安装 R 依赖（17 个直接依赖，其余由求解器处理）──────────────────────────────
+# ── 安装 R 依赖（只声明"我们用到的包"，传递依赖交给 pak 求解器）─────────────────
 #   预检 + 多源回退 + 失败时指明具体 URL，避免"跑到一半才失败且看不出原因"。
 #   scripts/ 不在应用层"运行期禁止装包"断言的扫描范围内（该断言只扫 seurat_backend/*.R）。
+#
+#   本地优先源（可选，**只在本机存在**）：.local-r-repo/ 里若放有源码包，
+#   安装脚本会优先用它们（网络不稳定时的缓解手段）。它只做只读挂载：
+#   **不进镜像、不进构建上下文里的 tar.gz 部分**，别人没有这个目录也不受影响。
 COPY scripts/install_r_deps.R /tmp/install_r_deps.R
 RUN --mount=type=cache,target=/root/.cache/R/pkgcache \
+    --mount=type=bind,source=.local-r-repo,target=/tmp/local-r-repo,ro \
     Rscript /tmp/install_r_deps.R
 
 # ── presto：本地 zip 安装（不在 CRAN/Bioc 上）─────────────────────────────────
 COPY shared_data/presto-master.zip /tmp/presto-master.zip
+#   ⚠️ 两个坑（都实测踩过）：
+#      1) dependencies=FALSE 时不会装 LinkingTo 依赖（presto 需要 RcppArmadillo）
+#         → 安装失败；
+#      2) install_local() 失败时**只报 warning**，`R -e` 仍以 0 退出 → 静默漏装。
+#   因此这里：依赖交给解算器（Depends/Imports/LinkingTo），并追加一条硬断言。
 RUN R -e "if(!requireNamespace('remotes', quietly=TRUE)) \
             install.packages('remotes', repos='https://cloud.r-project.org'); \
           remotes::install_local('/tmp/presto-master.zip', upgrade='never', \
-                                 dependencies=FALSE)" \
+                                 dependencies=c('Depends','Imports','LinkingTo'))" \
+ && Rscript -e "if (!requireNamespace('presto', quietly=TRUE)) \
+                  stop('presto 安装失败（通常是缺 LinkingTo 依赖，如 RcppArmadillo）')" \
  && rm -f /tmp/presto-master.zip
+
+# ── 构建期硬断言：这些包必须可加载（缺一个就 fail，不再让问题溜到运行期）──────
+#   每一个都对应真实使用路径：
+#     Seurat/harmony      → Step 1–3（质控/降维/聚类）
+#     SingleR/celldex/scrapper → Step 4（细胞类型注释）
+#     clusterProfiler/fgsea/DOSE/enrichplot → Step 9（富集）
+#     rtracklayer/ensembldb → 注释与坐标相关功能
+#     presto              → Seurat 的 Wilcoxon 加速路径
+RUN Rscript -e "\
+  need <- c('Seurat','harmony','SingleR','celldex','scrapper', \
+            'clusterProfiler','enrichplot','GOSemSim','DOSE','fgsea', \
+            'rtracklayer','ensembldb','presto'); \
+  missing <- need[!vapply(need, function(p) requireNamespace(p, quietly=TRUE), logical(1))]; \
+  if (length(missing)) stop('缺失 R 包: ', paste(missing, collapse=', ')); \
+  cat('✅ 关键 R 包自检通过:', length(need), '个\n')"
 
 # ── 固化版本清单，便于审计与复现 ──────────────────────────────────────────────
 RUN R -e "writeLines(capture.output(sessionInfo()), '/opt/scagent-R-sessionInfo.txt')" \
@@ -89,3 +134,14 @@ RUN R -e "writeLines(capture.output(sessionInfo()), '/opt/scagent-R-sessionInfo.
  && R -e "cat('R 包总数:', length(rownames(installed.packages())), '\n')"
 
 WORKDIR /workspace
+
+# ── 非 root 运行（与 agent 镜像对称，见 C9 / 决-13）──────────────────────────
+#   容器以 uid 1000 运行：产物写进挂载卷时，宿主侧的属主就是部署用户，
+#   不会再出现"root 写进去、普通用户删不掉"的问题（已实测：容器内 root 写新文件
+#   在宿主侧属主为 root(0)；agent 的 uid 1000 写的文件属主就是 1000）。
+#   注意：**不要** useradd —— rocker/tidyverse 基镜像自带 uid 1000 的用户
+#   （rstudio，HOME=/home/rstudio，已实测该 HOME 可写），再建会以退出码 4 失败。
+#   R 包都装在系统目录（root 所有、全局可读），运行期不需要写 /usr/local/lib；
+#   运行期产物一律走 SCAGENT_DATA_DIR（/data）。
+RUN mkdir -p /workspace && chown 1000:1000 /workspace
+ENV HOME=/home/rstudio

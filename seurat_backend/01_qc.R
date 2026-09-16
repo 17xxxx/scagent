@@ -474,18 +474,31 @@ run_quality_control <- function(...) {
 
   # Harmony 批次校正
   if (run_harmony) {
-    merged <- RunHarmony(
+    # harmony 2.x 改了参数名（实测 2.0.5）：
+    #   max.iter.harmony → max_iter；max.iter.cluster 已被移除（改由 early_stop 控制）
+    # 传旧名会直接报 "The parameter max.iter.harmony is replaced with parameter max_iter"。
+    # 这里按安装的版本构造参数，两个大版本都能跑。
+    harmony_args <- list(
       object         = merged,
       group.by.vars  = harmony_group_by_vars,
-      assay.use      = assay_name,
       reduction.use  = "pca",
       dims.use       = harmony_dims_vec,
       theta          = harmony_theta,
       lambda         = harmony_lambda,
       sigma          = harmony_sigma,
-      max.iter.harmony = harmony_max_iter_harmony,
-      max.iter.cluster = harmony_max_iter_cluster
+      max_iter       = harmony_max_iter_harmony
     )
+    if (utils::packageVersion("harmony") < "2.0.0") {
+      harmony_args$assay.use <- assay_name      # harmony 1.x 认识它；2.x 会报 "unhandled"
+      harmony_args$max_iter <- NULL
+      harmony_args$max.iter.harmony <- harmony_max_iter_harmony
+      harmony_args$max.iter.cluster <- harmony_max_iter_cluster
+      log_msg("  注意: 检测到 harmony < 2.0，使用旧参数名")
+    } else if (!identical(harmony_max_iter_cluster, 20)) {
+      log_msg("  提示: harmony >= 2.0 已移除 max.iter.cluster，该参数（",
+              harmony_max_iter_cluster, "）被忽略")
+    }
+    merged <- do.call(harmony::RunHarmony, harmony_args)
     log_msg("  Harmony 完成: dims =", harmony_dims_use,
             "theta =", harmony_theta, "lambda =", harmony_lambda)
 
