@@ -12,6 +12,11 @@
 #      ./deploy/configure.sh --root /srv/scagent --image-source public \
 #                            --deepseek-key sk-xxx --port 8080 --force
 #
+#  指向**已发布的镜像**（例如国内加速 / 自有 registry）时，直接用 --image-prefix：
+#      ./deploy/configure.sh --image-source public \
+#        --image-prefix crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen
+#  注意前缀里**不要**再拼 `scagent-`：镜像名 = <前缀>/scagent-<服务>:<版本>。
+#
 #  与 Windows 侧的 PS `install` **共用同一套 env 键与默认值**；镜像来源的推导
 #  复用 deploy/lib/image-source.sh（真·同一实现，避免两套默认值漂移）。
 #
@@ -31,6 +36,7 @@ step() { printf '      %s%s%s\n' "$C_D" "$*" "$C_0"; }
 
 INSTALL_ROOT=""
 IMAGE_SOURCE=""
+IMAGE_PREFIX=""
 DEEPSEEK_KEY=""
 PORT="8080"
 BIND_ADDR="127.0.0.1"
@@ -40,6 +46,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --root)         shift; INSTALL_ROOT="${1:?--root 需要目录}" ;;
     --image-source) shift; IMAGE_SOURCE="${1:?local|public|private}" ;;
+    --image-prefix) shift; IMAGE_PREFIX="${1:?--image-prefix 需要值（如 crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/sqxopen）}" ;;
     --deepseek-key) shift; DEEPSEEK_KEY="${1:?--deepseek-key 需要值}" ;;
     --port)         shift; PORT="${1:?--port 需要端口号}" ;;
     --bind)         shift; BIND_ADDR="${1:?--bind 需要地址}" ;;
@@ -47,7 +54,7 @@ while [ $# -gt 0 ]; do
     --print)        PRINT_ONLY=1 ;;
     --force)        FORCE=1 ;;
     -h|--help)      sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) die "未知参数：$1（可用：--root --image-source --deepseek-key --port --bind --yes --print --force）" ;;
+    *) die "未知参数：$1（可用：--root --image-source --image-prefix --deepseek-key --port --bind --yes --print --force）" ;;
   esac
   shift
 done
@@ -156,22 +163,29 @@ if [ -n "$PREFIX" ] && [ -n "$OLD_SOURCE" ] && [ "$OLD_SOURCE" != "$IMAGE_SOURCE
   PREFIX=""
 fi
 
-# 用共享库推导（唯一实现）：子 shell 里跑，拿回 prefix 与 pull policy
-derived="$( SCAGENT_LIB_SOFT_FAIL=1 SCAGENT_IMAGE_SOURCE="$IMAGE_SOURCE" SCAGENT_IMAGE_PREFIX="$PREFIX" SCAGENT_VERSION="$VERSION" bash -c '. "$1/deploy/lib/image-source.sh"; scagent_resolve_image >/dev/null 2>&1 && printf "%s %s" "$SCAGENT_IMAGE_PREFIX" "$SCAGENT_PULL_POLICY"' _ "$ROOT" 2>&1 )" || true
+# 命令行显式给的前缀优先级最高 —— 用于指向"已发布镜像"（如国内加速源或自有 registry）。
+# 这是把"手改 deploy/.env 两行"升级成一条命令的关键（此前 public 只能拿到内置默认前缀）。
+if [ -n "$IMAGE_PREFIX" ]; then
+  [ -n "$PREFIX" ] && [ "$PREFIX" != "$IMAGE_PREFIX" ] && \
+    step "命令行指定前缀 $IMAGE_PREFIX（覆盖原值 $PREFIX）"
+  PREFIX="$IMAGE_PREFIX"
+fi
 
-case "$derived" in
-  *" "*)
-    PREFIX="${derived% *}"; PULL_POLICY="${derived##* }"
-    ok "来源 $IMAGE_SOURCE → 前缀 $PREFIX（拉取策略 $PULL_POLICY，版本 $VERSION）"
-    if [ "$IMAGE_SOURCE" = "public" ] && ! printf '%s' "$PREFIX" | grep -q '[.:]'; then
-      warn "public 模式下前缀通常应含域名（如 ghcr.io/你的账号/scagent）；当前是 $PREFIX，会去 Docker Hub 找同名仓库"
-    fi
-    ;;
-  *)
-    die "镜像来源配置无效：$derived
-      可选：local（本机 build）/ public（如 ghcr.io/...）/ private（如 harbor.corp.local/scagent）"
-    ;;
-esac
+# 用共享库推导（唯一实现）：子 shell 里跑，拿回 prefix 与 pull policy。
+# 成败一律**看退出码** —— 不能靠输出形状判断：失败时那句中文说明本身含空格，
+# 会被 "有没有空格" 的旧写法误判成成功（同时它又是必须显示给用户的原因）。
+derived=""
+if ! derived="$( SCAGENT_LIB_SOFT_FAIL=1 SCAGENT_IMAGE_SOURCE="$IMAGE_SOURCE" SCAGENT_IMAGE_PREFIX="$PREFIX" SCAGENT_VERSION="$VERSION" bash -c '. "$1/deploy/lib/image-source.sh"; scagent_resolve_image >/dev/null && printf "%s %s" "$SCAGENT_IMAGE_PREFIX" "$SCAGENT_PULL_POLICY"' _ "$ROOT" 2>&1 )"; then
+  # 失败：把子 shell 给出的原因原样打印（多行也完整显示），再给一句通用结论
+  printf '%s\n' "$derived" | sed 's/^/      /' >&2
+  die "镜像来源配置无效（原因见上；可用：local 本机构建 / public 已发布镜像 / private 自有 registry）"
+fi
+
+PREFIX="${derived% *}"; PULL_POLICY="${derived##* }"
+ok "来源 $IMAGE_SOURCE → 前缀 $PREFIX（拉取策略 $PULL_POLICY，版本 $VERSION）"
+if [ "$IMAGE_SOURCE" = "public" ] && ! printf '%s' "$PREFIX" | grep -q '[.:]'; then
+  warn "public 模式下前缀通常应含域名（如 ghcr.io/你的账号/scagent）；当前是 $PREFIX，会去 Docker Hub 找同名仓库"
+fi
 
 info "[3/3] 密钥与访问令牌"
 KEY_FILE="$SECRETS/deepseek_api_key"
@@ -189,7 +203,9 @@ else
     KEY_ACTION="写入 $KEY_FILE"
   else
     KEY_ACTION='跳过（未提供）'
-    warn "未提供 LLM 密钥 —— 服务能启动，但无法规划分析步骤（可加 --force 重跑补上）"
+    warn "未提供 LLM 密钥 —— agent 启动时要求 LLM 可用，缺密钥会直接退出（容器反复重启）；"
+    warn "  稍后补上即可： ./deploy/configure.sh --force"
+    warn "  若打算用本地模型，请在 deploy/.env 里设 SCAGENT_LLM_PROVIDER=ollama（不需要密钥文件）"
   fi
 fi
 

@@ -15,6 +15,9 @@
 #  可选参数：
 #      -Root <目录>        数据/密钥根目录（默认：仓库上级目录，或 <系统盘>:\scagent）
 #      -ImageSource <src>  local | public | private（默认 local：本机构建）
+#      -ImagePrefix <前缀> 镜像前缀；配 -ImageSource 用，默认按来源推导
+#                          （指向已发布镜像时用，如国内加速：
+#                           -ImageSource public -ImagePrefix crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen）
 #      -Version <tag>      镜像标签（默认 1.0.0）
 #      -DeepSeekKey <sk->  非交互提供 LLM 密钥
 #      -Yes                不交互（配合 -DeepSeekKey）
@@ -28,6 +31,7 @@ param(
     [Parameter(Position = 0)][string]$Verb = 'help',
     [string]$Root = '',
     [string]$ImageSource = '',
+    [string]$ImagePrefix = '',
     [string]$Version = '',
     [string]$DeepSeekKey = '',
     [switch]$Yes,
@@ -101,7 +105,8 @@ function Show-ScUsage {
     Write-Host '    deploy\scagent.cmd refdata           获取参考数据集（细胞类型注释用，需外网）'
     Write-Host '    deploy\scagent.cmd secrets            生成 / 检查密钥文件'
     Write-Host ''
-    Write-Host '  常用参数： -Root D:\scagent  -ImageSource local|public|private  -DryRun'
+    Write-Host '  常用参数： -Root D:\scagent  -ImageSource local|public|private  -ImagePrefix <前缀>  -DryRun'
+    Write-Host '  指向已发布镜像： deploy\install.cmd -ImageSource public -ImagePrefix crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen'
     Write-Host ''
 }
 
@@ -256,7 +261,9 @@ function Invoke-ScSecretsVerb {
             Write-ScOk "已写入 LLM 密钥：$keyFile"
         }
     } elseif (-not $keyExisted) {
-        Write-ScWarn '未提供 LLM API Key —— 服务仍可启动，但无法规划分析步骤（可稍后补： deploy\scagent.cmd secrets）'
+        Write-ScWarn '未提供 LLM API Key —— agent 要求 LLM 可用，缺密钥会直接退出（容器反复重启）'
+        Write-ScStep '  稍后补上即可： deploy\scagent.cmd secrets'
+        Write-ScStep '  若用本地模型： deploy\.env 里设 SCAGENT_LLM_PROVIDER=ollama（不需要密钥文件）'
     }
 
     $token = ''
@@ -306,10 +313,12 @@ function Invoke-ScSecretsVerb {
 function New-ScEnvFromTemplate {
     <# 生成 .env 内容（并写盘，除非 -DryRun）；**返回生成的映射**，
        让 dry-run 也能继续走后面的流程（否则读不到 .env 会中途报错） #>
-    param([string]$InstallRoot, [string]$Src, [string]$Ver)
+    param([string]$InstallRoot, [string]$Src, [string]$Ver, [string]$Prefix = '')
     $data = New-Object System.Collections.Specialized.OrderedDictionary
     $data['SCAGENT_IMAGE_SOURCE'] = $Src
-    if ($Src -eq 'local') { $data['SCAGENT_IMAGE_PREFIX'] = 'scagent' }
+    # 显式给的前缀（-ImagePrefix）优先；否则按来源推导默认值
+    if ($Prefix) { $data['SCAGENT_IMAGE_PREFIX'] = $Prefix }
+    elseif ($Src -eq 'local') { $data['SCAGENT_IMAGE_PREFIX'] = 'scagent' }
     elseif ($Src -eq 'public') { $data['SCAGENT_IMAGE_PREFIX'] = 'ghcr.io/17xxxx/scagent' }
     else { $data['SCAGENT_IMAGE_PREFIX'] = 'harbor.example.com/scagent' }
     $data['SCAGENT_VERSION'] = $Ver
@@ -406,6 +415,16 @@ function Invoke-ScInstall {
     if (-not $Version) { $Version = '1.0.0' }
     $InstallRoot = $Root
 
+    # 立刻校验"来源 + 前缀"组合（复用 lib 里与 bash 侧同一套规则），
+    # 避免装到一半才在 compose 插值时报错；给的前缀不合法时这里就停下
+    try {
+        $null = Resolve-ScImageSource -Source $ImageSource -Prefix $ImagePrefix -Version $Version
+    } catch {
+        Write-ScErr $_.Exception.Message
+        Write-ScStep '提示：命令行用 -ImageSource public 指定"已发布镜像"（deploy\.env 里的键名是 SCAGENT_IMAGE_SOURCE）'
+        exit 1
+    }
+
     Write-ScInfo '[1/6] 环境体检'
     Assert-ScDocker
     Write-ScOk "docker $(Get-ScDockerInfoValue -Format '{{.ServerVersion}}')"
@@ -450,7 +469,7 @@ function Invoke-ScInstall {
         Write-ScOk '已存在，保留现有配置（要重新生成请先删除 deploy\.env）'
     } else {
         # 返回生成的映射：dry-run 时 .env 不会写盘，后续步骤要直接用它，否则读不到配置
-        $generatedEnv = New-ScEnvFromTemplate -InstallRoot $InstallRoot -Src $ImageSource -Ver $Version
+        $generatedEnv = New-ScEnvFromTemplate -InstallRoot $InstallRoot -Src $ImageSource -Ver $Version -Prefix $ImagePrefix
     }
 
     Write-ScInfo '[3/6] 密钥与数据目录'
