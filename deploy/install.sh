@@ -10,6 +10,12 @@
 #  用法：
 #      ./deploy/install.sh                 # 完整流程
 #      ./deploy/install.sh --check-only    # 只做环境体检
+#      ./deploy/install.sh --refdata both  # 顺带下载参考数据集：mouse|human|both|none
+#
+#  参考数据集：细胞类型注释（Step 4）需要 celldex 的数据集（小鼠约 17 MB）。
+#  本脚本会**询问**要下载哪一个（1 小鼠 / 2 人类 / 3 两个 / 0 跳过），
+#  并在服务拉起后用一个临时容器（带外网）下载到 <SCAGENT_BIODATA>/celldex/；
+#  生产容器仍然离线、只读挂载 —— 运行期零下载的架构不变。
 # ═══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -17,13 +23,23 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 CHECK_ONLY=0
-[ "${1:-}" = "--check-only" ] && CHECK_ONLY=1
+REFDATA_CHOICE=""
 
 C_R=$'\033[31m'; C_G=$'\033[32m'; C_Y=$'\033[33m'; C_B=$'\033[36m'; C_0=$'\033[0m'
 info() { printf '\n%s\n' "${C_B}==>${C_0} $*"; }
 ok()   { printf '  %s\n' "${C_G}✅${C_0} $*"; }
 warn() { printf '  %s\n' "${C_Y}⚠️ ${C_0} $*"; }
 die()  { printf '  %s\n' "${C_R}❌${C_0} $*" >&2; exit 1; }
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --check-only) CHECK_ONLY=1 ;;
+    --refdata)    shift; REFDATA_CHOICE="${1:?--refdata 需要 mouse|human|both|none}" ;;
+    -h|--help)    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) die "未知参数：$1（可用：--check-only --refdata mouse|human|both|none）" ;;
+  esac
+  shift
+done
 
 # 共享库：镜像来源解析 + .env 安全加载（去 CR）
 # shellcheck source=lib/image-source.sh
@@ -184,5 +200,74 @@ ok "镜像来源: $SCAGENT_IMAGE_SOURCE（前缀 $SCAGENT_IMAGE_PREFIX，策略 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 3. 启动
 # ═══════════════════════════════════════════════════════════════════════════════
+
+# ── 参考数据集（celldex）：这里只**问**，真正的下载放到服务拉起之后 ──
+#    原因：下载要用的 celldex 包在 seurat 镜像里，而镜像要到 up.sh 之后才就绪。
+_bio="${SCAGENT_BIODATA:-}"
+case "$_bio" in
+  /*) ;;
+  *)  _bio="$ROOT/${_bio#./}" ;;
+esac
+CELDEX_DIR="$_bio/celldex"
+# 先把目录建好（宿主用户所有）——否则容器启动时 Docker 会以 root 建同名目录，
+# 之后宿主机上跑的 fetch_refdata.sh 就写不进去了（权限拒绝）。
+mkdir -p "$CELDEX_DIR" 2>/dev/null || warn "无法创建 $CELDEX_DIR —— 该目录可能由 Docker 以 root 创建，请手工修属主"
+have_mouse=0; have_human=0
+[ -f "$CELDEX_DIR/MouseRNAseqData.rds" ] && have_mouse=1
+[ -f "$CELDEX_DIR/HumanPrimaryCellAtlasData.rds" ] && have_human=1
+[ "$have_mouse" = 1 ] && ok "参考数据集：小鼠 MouseRNAseqData.rds 已就绪"
+[ "$have_human" = 1 ] && ok "参考数据集：人类 HumanPrimaryCellAtlasData.rds 已就绪"
+if [ "$have_mouse" = 0 ] && [ "$have_human" = 0 ]; then
+  warn "尚未下载参考数据集（$CELDEX_DIR）—— 细胞类型注释（Step 4）需要它"
+fi
+
+if [ -n "$REFDATA_CHOICE" ]; then
+  case "$REFDATA_CHOICE" in
+    mouse|human|both|none) ;;
+    *) die "--refdata 只能是 mouse | human | both | none（当前：$REFDATA_CHOICE）" ;;
+  esac
+elif [ "$have_mouse" = 1 ] && [ "$have_human" = 1 ]; then
+  REFDATA_CHOICE="none"
+elif [ -t 0 ]; then
+  printf '\n  ── 参考数据集（细胞类型注释 Step 4 需要；下载一次，之后离线可用）──\n'
+  printf '     [1] 小鼠 MouseRNAseqData（约 17 MB）%s\n' "$([ "$have_mouse" = 1 ] && printf '   ← 已存在，将跳过' || true)"
+  printf '     [2] 人类 HumanPrimaryCellAtlasData（体积更大）%s\n' "$([ "$have_human" = 1 ] && printf '   ← 已存在，将跳过' || true)"
+  printf '     [3] 两个都下载\n'
+  printf '     [0] 先跳过（稍后可随时执行： ./scripts/fetch_refdata.sh）\n'
+  printf '  请选择 [1]: '
+  read -r _ans
+  case "${_ans:-1}" in
+    2) REFDATA_CHOICE=human ;;
+    3) REFDATA_CHOICE=both ;;
+    0) REFDATA_CHOICE=none ;;
+    *) REFDATA_CHOICE=mouse ;;
+  esac
+else
+  # 非交互（管道 / CI）不做静默联网下载
+  REFDATA_CHOICE="none"
+fi
+
 info "[3/3] 拉起服务"
-exec bash deploy/up.sh
+bash deploy/up.sh || die "启动失败（详见上方输出）"
+
+# ── 参考数据集下载（此时 seurat 镜像已就绪，celldex 包可用）──
+fetch_one() {
+  local sp="$1"
+  if ! bash scripts/fetch_refdata.sh --species "$sp"; then
+    warn "参考数据集（$sp）下载失败 —— 可在网络可用时重试： ./scripts/fetch_refdata.sh --species $sp"
+  fi
+}
+case "$REFDATA_CHOICE" in
+  mouse) fetch_one mouse ;;
+  human) fetch_one human ;;
+  both)  fetch_one mouse; fetch_one human ;;
+  none)
+    if [ "$have_mouse" = 0 ] && [ "$have_human" = 0 ]; then
+      printf '      %s\n' '未下载参考数据集 —— 细胞类型注释（Step 4）会失败；需要时随时执行：'
+      printf '        %s\n' './scripts/fetch_refdata.sh                  （小鼠）'
+      printf '        %s\n' './scripts/fetch_refdata.sh --species human   （人类）'
+    fi
+    ;;
+esac
+
+ok "部署完成"

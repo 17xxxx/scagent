@@ -312,7 +312,11 @@ deploy\scagent.cmd doctor
 | 小鼠（默认） | `MouseRNAseqData.rds` |
 | 人类 | `HumanPrimaryCellAtlasData.rds` |
 
-**一条命令获取**（用临时容器联网下载并直接写入该目录，需要外网）：
+**安装时会问你**：`deploy\install.cmd`（Windows）与 `./deploy/install.sh`（Linux）在配置那一步会列出
+`[1] 小鼠 / [2] 人类 / [3] 两个都下载 / [0] 先跳过`，选完在服务拉起后自动下载（下载完成后容器仍然离线、只读挂载）。
+非交互安装（`-Yes`）不会静默下载，需要时加 `-Refdata mouse|human|both`（Linux：`--refdata`）。
+
+**也可以随时手动获取**（用临时容器联网下载并直接写入该目录，需要外网）：
 
 ```bash
 ./scripts/fetch_refdata.sh                    # 小鼠；人类： --species human

@@ -82,7 +82,13 @@ if [ -z "$IMAGE" ]; then
   fi
 fi
 
-mkdir -p "$TARGET"
+if ! mkdir -p "$TARGET" 2>/dev/null; then
+  die "无法创建/写入目标目录：$TARGET
+      常见原因：该目录的父目录属主是 root —— 容器首次启动时 Docker 会为
+      bind mount 的源目录自动创建它。修复：
+          sudo chown -R \$(id -u):\$(id -g) '$(dirname "$TARGET")'
+      或改用 --target 指向一个你自己可写的目录。"
+fi
 
 printf '\n%s\n' "════════════════════════════════════════════════════════════"
 printf '%s\n'   "  获取参考数据集（celldex）"

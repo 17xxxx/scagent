@@ -18,6 +18,8 @@
 #      -ImagePrefix <前缀> 镜像前缀；配 -ImageSource 用，默认按来源推导
 #                          （指向已发布镜像时用，如国内加速：
 #                           -ImageSource public -ImagePrefix crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen）
+#      -Refdata <值>       参考数据集（细胞类型注释用）：mouse | human | both | none
+#                          不指定时安装向导会询问；-Yes（非交互）默认不下载
 #      -Version <tag>      镜像标签（默认 1.0.0）
 #      -DeepSeekKey <sk->  非交互提供 LLM 密钥
 #      -Yes                不交互（配合 -DeepSeekKey）
@@ -32,6 +34,7 @@ param(
     [string]$Root = '',
     [string]$ImageSource = '',
     [string]$ImagePrefix = '',
+    [string]$Refdata = '',
     [string]$Version = '',
     [string]$DeepSeekKey = '',
     [switch]$Yes,
@@ -106,7 +109,7 @@ function Show-ScUsage {
     Write-Host '    deploy\scagent.cmd refdata           获取参考数据集（细胞类型注释用，需外网）'
     Write-Host '    deploy\scagent.cmd secrets            生成 / 检查密钥文件'
     Write-Host ''
-    Write-Host '  常用参数： -Root D:\scagent  -ImageSource local|public|private  -ImagePrefix <前缀>  -DryRun'
+    Write-Host '  常用参数： -Root D:\scagent  -ImageSource local|public|private  -ImagePrefix <前缀>  -Refdata mouse|human|both|none  -DryRun'
     Write-Host '  指向已发布镜像： deploy\install.cmd -ImageSource public -ImagePrefix crpi-4le1vixwpzhdr5y0.cn-beijing.personal.cr.aliyuncs.com/sqxopen'
     Write-Host ''
 }
@@ -488,13 +491,28 @@ function Invoke-ScInstall {
     $wsWin = ($ws -replace '/', '\')
     Write-ScStep "把 10X 数据放到： $wsWin\data\rawdata\<样本名>\（barcodes / features / matrix 三个文件）"
     Write-ScStep '⚠️ 注意：是上面这个**工作目录**，不是仓库目录里的 data\ —— 两者是不同目录（最常见的放错位置）'
+    # ── 参考数据集（celldex）：这里只**问**，真正的下载放到镜像就绪之后 ──
+    #    原因：下载要用的 celldex 包在 seurat 镜像里，而镜像要到 [4/6] 才准备好。
+    $refChoice = 'none'
+    $haveMouse = $false
+    $haveHuman = $false
     $bioRaw = Get-ScEnvValue -Env $ctx.Env -Key 'SCAGENT_BIODATA'
     if ($bioRaw) {
         $bio = Resolve-ScPath -Path $bioRaw -RepoRoot $RepoRoot
-        if (-not (Test-Path -LiteralPath $bio)) {
-            Write-ScWarn "参考数据目录不存在：$bio —— 细胞类型注释（Step 4）会失败"
-            Write-ScStep '一次性获取（需要外网）： deploy\scagent.cmd refdata'
+        $celldexDir = Join-Path $bio 'celldex'
+        # 先把目录建好（当前用户所有）——否则容器启动时 Docker 会建同名目录，
+        # 之后宿主机侧的 refdata 下载可能因权限写不进去。
+        if (-not $DryRun -and -not (Test-Path -LiteralPath $celldexDir)) {
+            New-Item -ItemType Directory -Path $celldexDir -Force | Out-Null
         }
+        $haveMouse = Test-Path -LiteralPath (Join-Path $celldexDir 'MouseRNAseqData.rds')
+        $haveHuman = Test-Path -LiteralPath (Join-Path $celldexDir 'HumanPrimaryCellAtlasData.rds')
+        if ($haveMouse) { Write-ScOk '参考数据集：小鼠 MouseRNAseqData.rds 已就绪' }
+        if ($haveHuman) { Write-ScOk '参考数据集：人类 HumanPrimaryCellAtlasData.rds 已就绪' }
+        if (-not $haveMouse -and -not $haveHuman) {
+            Write-ScWarn "尚未下载参考数据集（$celldexDir）—— 细胞类型注释（Step 4）需要它"
+        }
+        $refChoice = Resolve-ScRefdataChoice -Given $Refdata -HaveMouse $haveMouse -HaveHuman $haveHuman
     }
 
     $ctx = Get-ScContext -EnvMap $generatedEnv
@@ -530,6 +548,15 @@ function Invoke-ScInstall {
     } else {
         Write-ScInfo '拉取镜像（唯一联网动作）'
         Invoke-ScCompose -RepoRoot $RepoRoot -Files $sf.Files -Arguments @('pull') -DryRun:$DryRun | Out-Null
+    }
+
+    # ── 参考数据集下载（此时 seurat 镜像已就绪，celldex 包可用）──
+    if ($refChoice -eq 'mouse' -or $refChoice -eq 'both') { Invoke-ScRefdata -Species 'mouse' -NonFatal }
+    if ($refChoice -eq 'human' -or $refChoice -eq 'both') { Invoke-ScRefdata -Species 'human' -NonFatal }
+    if ($refChoice -eq 'none' -and -not ($haveMouse -or $haveHuman)) {
+        Write-ScStep '未下载参考数据集 —— 细胞类型注释（Step 4）会失败；需要时随时执行：'
+        Write-ScStep '    deploy\scagent.cmd refdata                  （小鼠）'
+        Write-ScStep '    deploy\scagent.cmd refdata -Species human   （人类）'
     }
 
     Write-ScInfo '[5/6] 启动服务'
@@ -1217,13 +1244,54 @@ function Invoke-ScRollback {
 }
 
 # ── 动词：refdata（一次性获取参考数据集）─────────────────────────────────────
+function Resolve-ScRefdataChoice {
+    <#
+      决定要下载哪些参考数据集（celldex）。
+      优先级：显式 -Refdata > 交互提问 > 非交互时跳过（不静默联网）。
+    #>
+    param([string]$Given, [bool]$HaveMouse, [bool]$HaveHuman)
+
+    if ($Given) {
+        $g = "$Given".Trim().ToLower()
+        if ($g -notin @('mouse', 'human', 'both', 'none')) {
+            Exit-Sc "-Refdata 只能是 mouse | human | both | none（当前：$Given）" 2
+        }
+        return $g
+    }
+    if ($HaveMouse -and $HaveHuman) { return 'none' }
+    if ($DryRun) {
+        Write-ScStep '[dry-run] 会询问是否下载参考数据集（1 小鼠 / 2 人类 / 3 两个 / 0 跳过）'
+        return 'none'
+    }
+    if ($Yes) {
+        # 非交互模式不做静默下载（可能无外网）；需要时用 -Refdata 显式指定
+        return 'none'
+    }
+
+    Write-Host ''
+    Write-Host '  ── 参考数据集（细胞类型注释 Step 4 需要；下载一次，之后离线可用）──'
+    Write-Host ("     [1] 小鼠 MouseRNAseqData（约 17 MB）" + $(if ($HaveMouse) { '   ← 已存在，将跳过' } else { '' }))
+    Write-Host ("     [2] 人类 HumanPrimaryCellAtlasData（体积更大）" + $(if ($HaveHuman) { '   ← 已存在，将跳过' } else { '' }))
+    Write-Host '     [3] 两个都下载'
+    Write-Host '     [0] 先跳过（稍后可随时执行： deploy\scagent.cmd refdata）'
+    $ans = "$(Read-Host '  请选择 [1]')".Trim()
+    switch ($ans) {
+        '2'     { return 'human' }
+        '3'     { return 'both' }
+        '0'     { return 'none' }
+        '1'     { return 'mouse' }
+        ''      { return 'mouse' }
+        default { Write-ScWarn "无法识别的选项「$ans」—— 按默认（小鼠）处理"; return 'mouse' }
+    }
+}
+
 function Invoke-ScRefdata {
     <#
       celldex 这个 R 包随镜像自动安装；它提供的**数据集**体积大、不进镜像。
       这里用一个临时容器（带外网）下载并直接写入宿主机的 <SCAGENT_BIODATA>\celldex\，
       生产容器仍然离线、只读挂载 —— 运行期零下载的架构不变。
     #>
-    param([string]$Species = 'mouse', [switch]$Force)
+    param([string]$Species = 'mouse', [switch]$Force, [switch]$NonFatal)
 
     # refdata 同理：只依赖 SCAGENT_BIODATA（缺省时用安装根下的 biodata）
     $ctx = Get-ScContextOrDefault
@@ -1232,7 +1300,10 @@ function Invoke-ScRefdata {
     $sp = "$Species".Trim().ToLower()
     if ($sp -eq 'human') { $refFun = 'HumanPrimaryCellAtlasData'; $refFile = 'HumanPrimaryCellAtlasData.rds' }
     elseif ($sp -eq 'mouse') { $refFun = 'MouseRNAseqData'; $refFile = 'MouseRNAseqData.rds' }
-    else { Exit-Sc "-Species 只能是 mouse 或 human（当前：$Species）" 2 }
+    else {
+        if ($NonFatal) { Write-ScWarn "-Species 只能是 mouse 或 human（当前：$Species）"; return }
+        Exit-Sc "-Species 只能是 mouse 或 human（当前：$Species）" 2
+    }
 
     $bioRaw = Get-ScEnvValue -Env $ctx.Env -Key 'SCAGENT_BIODATA'
     if (-not $bioRaw) { $bioRaw = Join-Path (Get-DefaultRoot) 'biodata' }
@@ -1260,15 +1331,23 @@ function Invoke-ScRefdata {
     New-Item -ItemType Directory -Path $target -Force | Out-Null
     Assert-ScDocker
     if (-not (Test-ScImageExists -Image $image)) {
-        Exit-Sc "本地没有镜像 $image —— 先运行： deploy\scagent.cmd build（或 install）" 3
+        $msg = "本地没有镜像 $image —— 先运行： deploy\scagent.cmd build（或 install）"
+        if ($NonFatal) { Write-ScWarn $msg; return }
+        Exit-Sc $msg 3
     }
 
     Write-ScInfo '下载中（体积较大，请耐心等待）'
     $r = "library(celldex); message('正在获取 $refFun() …'); x <- $refFun(); saveRDS(x, '/out/$refFile'); cat('OK', format(file.size('/out/$refFile')), '\n')"
     & docker run --rm --network bridge -v "${target}:/out" --entrypoint Rscript $image -e $r
     if ($LASTEXITCODE -ne 0) {
-        Exit-Sc "下载失败。常见原因：容器无法出网（代理/防火墙/DNS）、镜像不存在。
-      离线环境可改用自建对象存储： scripts/download_data.sh（见 deploy/data.manifest）" 3
+        $msg = "下载失败。常见原因：容器无法出网（代理/防火墙/DNS）、镜像不存在。
+      离线环境可改用自建对象存储： scripts/download_data.sh（见 deploy/data.manifest）"
+        if ($NonFatal) {
+            Write-ScWarn $msg
+            Write-ScStep "网络可用时重试： deploy\scagent.cmd refdata -Species $sp"
+            return
+        }
+        Exit-Sc $msg 3
     }
     $mb = [math]::Round((Get-Item -LiteralPath $outFile).Length / 1MB, 1)
     Write-ScOk "已写入：$outFile（${mb} MB）"

@@ -109,7 +109,8 @@ Three things worth knowing up front:
   (a standalone file, never written into `.env`); **the service will not start without it**.
 - **Where the data goes** — `<install-root>/workspace/data/rawdata/<sample>/`: one sub-directory per
   sample, with the `barcodes` / `features` / `matrix` files directly inside. **It is not** the `data/`
-  directory inside the repository.
+  directory inside the repository. (The installer also asks whether to download the reference
+  dataset needed for cell-type annotation: mouse / human / both / skip.)
 - **Access token** — `scagent_token` in the same directory; paste its contents on the first browser visit.
 
 ## Documentation

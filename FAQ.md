@@ -116,6 +116,8 @@ D:\projects\workspace\data\rawdata\sample1\      ← Windows 例：安装根 = D
 
 **处置**（一条命令，需要外网）：
 
+> 安装向导会问你要不要下载（`[1] 小鼠 / [2] 人类 / [3] 两个 / [0] 跳过`）——选了"跳过"才会有下面这一步。
+
 ```bash
 ./scripts/fetch_refdata.sh                    # 小鼠（默认）
 ./scripts/fetch_refdata.sh --species human    # 人类

@@ -266,9 +266,10 @@ run_cell_annotation <- function(...) {
   # 根据物种从【只读数据卷】加载参考数据集
   # ---------------------------------------------------------------------------
   # 参考数据属于「数据」而非「软件」：不进镜像、不进 registry，也不允许联网下载。
-  # 由宿主机 scripts/download_data.sh 从对象存储下载到 /data/biodata，
-  # 再以只读方式挂载进容器（docker-compose.yml: /data/biodata:/ref:ro）。
-  # 缺失时直接报错并提示下载 —— 绝不静默回退公网，否则"零下载"无法保证。
+  # 参考数据由部署者在宿主机一次性获取（Windows: deploy\scagent.cmd refdata;
+  # Linux: ./scripts/fetch_refdata.sh），放在 <SCAGENT_BIODATA>/celldex/，
+  # 再以只读方式挂载进容器（compose: ${SCAGENT_BIODATA}:/ref:ro）。
+  # 缺失时直接报错并提示获取方式 —— 运行期不联网下载。
   # ---------------------------------------------------------------------------
   ref_data <- scagent_load_refdata(species)
   log_msg("  加载参考集:",

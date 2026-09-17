@@ -142,11 +142,19 @@ mkdir -p "$WORKSPACE/data/rawdata" "$WORKSPACE/state"
 ok "工作目录: $WORKSPACE"
 
 BIODATA="$(scagent_resolve_path "${SCAGENT_BIODATA:?deploy/.env 中未设置 SCAGENT_BIODATA}")"
+# 先建好目录（宿主机用户所有）：否则容器启动时 Docker 会以 root 创建它，
+# 之后宿主机上跑的 fetch_refdata.sh 会因权限写不进去。
+mkdir -p "$BIODATA/celldex" 2>/dev/null || true
 if [ -d "$BIODATA" ]; then
   ok "参考数据目录: $BIODATA"
 else
-  warn "参考数据目录不存在: $BIODATA"
-  warn "  细胞注释（Step 4）会失败。一次性获取（需要外网）: ./scripts/fetch_refdata.sh"
+  warn "参考数据目录不可用: $BIODATA（无法创建，可能属主是 root）"
+fi
+if [ -f "$BIODATA/celldex/MouseRNAseqData.rds" ] || [ -f "$BIODATA/celldex/HumanPrimaryCellAtlasData.rds" ]; then
+  ok "参考数据集：已就绪"
+else
+  warn "参考数据集尚未下载 —— 细胞类型注释（Step 4）会失败"
+  warn "  一次性获取（需要外网）: ./scripts/fetch_refdata.sh"
   warn "  （离线环境或有自建对象存储时: scripts/download_data.sh --target $BIODATA）"
 fi
 

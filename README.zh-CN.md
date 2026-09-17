@@ -111,7 +111,7 @@ scagent/
 注意事项：
 
 - **LLM API Key**：在第 ② 步输入，存放在安装根目录下的 `secrets/deepseek_api_key`（独立文件，不写进 `.env`）；**没有它服务无法启动**。
-- **数据放哪**：`<安装根>/workspace/data/rawdata/<样本名>/` —— 每个样本一个子目录，`barcodes` / `features` / `matrix` 三个文件直接放里面；**不是**仓库目录里的 `data/`。
+- **数据放哪**：`<安装根>/workspace/data/rawdata/<样本名>/` —— 每个样本一个子目录，`barcodes` / `features` / `matrix` 三个文件直接放里面；**不是**仓库目录里的 `data/`。（安装时还会问要不要下载细胞类型注释所需的参考数据集：小鼠 / 人类 / 两个 / 跳过。）
 - **访问令牌**：同目录下的 `scagent_token`，浏览器首次访问时粘贴它的内容。
 
 ## 文档

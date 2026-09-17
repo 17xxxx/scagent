@@ -130,8 +130,12 @@ scagent_load_refdata <- function(species = "mouse") {
   ref_file <- file.path(ref_dir, ref_name)
   if (!file.exists(ref_file)) {
     stop("参考集缺失: ", ref_file,
-         "\n请先在宿主机执行 scripts/fetch_refdata.sh 获取参考数据（详见 DEPLOY.md §5）。",
-         "\n挂载约定：宿主机 SCAGENT_BIODATA 目录 -> 容器 ", ref_dir, "（只读）")
+         "\n该步骤需要参考数据集（由部署者在宿主机一次性下载，之后以只读方式挂载）。",
+         "\n请在宿主机执行（按你的系统二选一）：",
+         "\n    Windows : deploy\\scagent.cmd refdata               （人类参考集： -Species human）",
+         "\n    Linux   : ./scripts/fetch_refdata.sh                （人类参考集： --species human）",
+         "\n下载后文件位于 <SCAGENT_BIODATA>/celldex/，容器内只读挂载为 ", ref_dir,
+         "；无需重启服务，重新执行本步骤即可。")
   }
   readRDS(ref_file)
 }
