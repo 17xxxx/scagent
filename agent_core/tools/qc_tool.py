@@ -20,6 +20,22 @@ from ._log import log_api_call
 # R 容器地址（docker-compose 内网，服务名即主机名）
 SEURAT_BASE_URL = os.getenv("SEURAT_API_BASE", "http://seurat:9000")
 
+# 质控结果附带的解读提示（随工具返回值一起进入模型上下文）。
+# 为什么不写进 SYSTEM_PROMPT：这段只在跑过质控之后才有用，放在返回值里可以
+# 精确地"跟着这次结果走"，并带上本次实际使用的阈值。
+_MT_HINT_TEMPLATE = """\
+【如何解读质量控制的线粒体比例 percent.mt】
+· 含义：percent.mt 偏高通常意味着细胞膜破损、细胞处于凋亡/死亡（胞质 mRNA 流失，线粒体 RNA 相对富集）。
+· 常用阈值：常规组织一般 <5%~<10%；本次运行使用的上限是 percent_mt_max={mt_max}%。
+· 组织差异：代谢活跃组织（肝、心、肌肉、肾）与肿瘤组织的线粒体比例天然偏高；
+  对这些样本沿用 {mt_max}% 可能大面积剔除细胞，通常可放宽到 15%~20%。
+· 本返回值中**没有** percent.mt 的分布统计（中位数、各阈值下的细胞数），
+  因此不要声称"多数细胞线粒体比例约为 x%"这类无数据支撑的结论。
+· 可操作判据：看 cells_removed_pct 与 per_sample[*].pct —— 若某些样本剔除比例明显偏高
+  （例如超过 30%），应主动询问样本的组织类型，确认后建议放宽 percent_mt_max 重跑质控。
+· 以上是通用经验阈值，不是本次数据的实测结论。
+"""
+
 
 def raw_data_dir() -> str:
     """原始数据根目录。
@@ -219,5 +235,11 @@ def run_qc_for_all_samples(
     # 3. 调用 R 后端
     result = _call_qc_api(r_params)
 
-    # 4. 返回结果给 Agent
+    # 4. 附带解读提示（仅在质控成功时）——帮助 Agent 判断线粒体阈值是否过严。
+    #    返回值会被 langgraph 的 msg_content_output() 用 json.dumps 序列化进
+    #    ToolMessage，因此新增字段对模型可见。
+    if isinstance(result, dict) and result.get("status") == "success":
+        result["interpretation_note"] = _MT_HINT_TEMPLATE.format(mt_max=percent_mt_max)
+
+    # 5. 返回结果给 Agent
     return result
